@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncCut — Multi-Camera Sync Dashboard</title>
+  <meta name="description"
+    content="SyncCut global multi-source audio sync dashboard with calibrated confidence, drift detection, and FCPXML rough cut export.">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg: #08100d;
+      --panel: #101f19;
+      --line: #1c3229;
+      --line-soft: #16241d;
+      --ink: #eef4f0;
+      --ink-dim: #93a89e;
+      --ink-faint: #5a6f65;
+      --signal: #3ee08c;
+      --signal-dim: #1f7a52;
+      --bad: #e0806f;
+      --warn: #e0b93e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    .mono {
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    /* ── NAV ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 32px;
+      border-bottom: 1px solid var(--line-soft);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .brand-mark {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+    }
+
+    .brand-mark span {
+      display: block;
+      width: 4px;
+      background: var(--signal);
+      border-radius: 1px;
+    }
+
+    .brand-mark span:nth-child(1) {
+      height: 7px;
+    }
+
+    .brand-mark span:nth-child(2) {
+      height: 18px;
+    }
+
+    .brand-mark span:nth-child(3) {
+      height: 12px;
+    }
+
+    .beta-chip {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      letter-spacing: .08em;
+      background: rgba(62, 224, 140, .12);
+      color: var(--signal);
+      padding: 3px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      margin-left: 8px;
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    nav a.back {
+      font-size: 13px;
+      color: var(--ink-dim);
+    }
+
+    nav a.back:hover {
+      color: var(--ink);
+    }
+
+    .demo-flag {
+      display: none;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--warn);
+      background: rgba(224, 185, 62, .12);
+      padding: 4px 10px;
+      border-radius: 3px;
+      letter-spacing: .05em;
+    }
+
+    .demo-flag.show {
+      display: inline-block;
+    }
+
+    .backend-status {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 3px;
+      letter-spacing: .05em;
+      color: var(--ink-faint);
+      background: rgba(90, 111, 101, .1);
+      border: 1px solid var(--line-soft);
+      transition: color .3s, background .3s;
+    }
+
+    .backend-status.online {
+      color: var(--signal);
+      background: rgba(62, 224, 140, .08);
+      border-color: var(--signal-dim);
+    }
+
+    .backend-status.offline {
+      color: var(--bad);
+      background: rgba(224, 128, 111, .08);
+      border-color: rgba(224, 128, 111, .3);
+    }
+
+    .error-banner {
+      display: none;
+      background: rgba(224, 128, 111, .08);
+      border: 1px solid rgba(224, 128, 111, .35);
+      border-radius: 4px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      color: var(--bad);
+    }
+
+    .error-banner.show {
+      display: block;
+    }
+
+    /* ── LAYOUT ── */
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 32px 100px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      margin-bottom: 6px;
+    }
+
+    .lead {
+      color: var(--ink-dim);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    /* ── INTRO BANNER ── */
+    .intro {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 24px 26px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .intro-text h2 {
+      font-size: 19px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .intro-text p {
+      font-size: 13.5px;
+      color: var(--ink-dim);
+      line-height: 1.55;
+      max-width: 560px;
+    }
+
+    .intro-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    /* ── REVIEW REQUIRED BANNER ── */
+    .review-banner {
+      display: none;
+      background: rgba(224, 128, 111, .08);
+      border: 1px solid rgba(224, 128, 111, .35);
+      border-radius: 4px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+    }
+
+    .review-banner.show {
+      display: block;
+    }
+
+    .review-banner h3 {
+      font-size: 13px;
+      color: var(--bad);
+      margin-bottom: 8px;
+      letter-spacing: .03em;
+    }
+
+    .review-banner ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .review-banner li {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--bad);
+      padding: 2px 0;
+    }
+
+    .review-banner li::before {
+      content: "⚠ ";
+    }
+
+    /* ── PANELS ── */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-head b {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .panel-head span {
+      font-size: 11px;
+      color: var(--ink-faint);
+    }
+
+    .panel-body {
+      padding: 20px;
+    }
+
+    /* ── STEP ROWS ── */
+    .step-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .step-row:last-child {
+      border-bottom: none;
+    }
+
+    .step-num {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--ink-faint);
+      width: 20px;
+    }
+
+    /* ── OPTIONS ROW ── */
+    .options-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      align-items: center;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .opt-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .opt-group label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--ink-faint);
+    }
+
+    .opt-group select,
+    .opt-group input[type=checkbox] {
+      background: #0a1712;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      padding: 7px 10px;
+      border-radius: 2px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--ink-dim);
+      cursor: pointer;
+    }
+
+    .toggle-label input[type=checkbox] {
+      accent-color: var(--signal);
+      width: 14px;
+      height: 14px;
+    }
+
+    /* ── BUTTONS ── */
+    .btn-demo {
+      background: var(--signal);
+      color: #06150e;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-demo:hover {
+      background: #5eea9f;
+    }
+
+    .btn-demo:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+
+    .btn-reset {
+      display: none;
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink-dim);
+      font-size: 13px;
+      padding: 10px 16px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-reset.show {
+      display: inline-block;
+    }
+
+    .btn-reset:hover {
+      border-color: var(--signal-dim);
+      color: var(--ink);
+    }
+
+    .file-btn {
+      background: #0a1712;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      padding: 10px 16px;
+      border-radius: 2px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    .file-btn:hover:not(:disabled) {
+      border-color: var(--signal-dim);
+    }
+
+    .file-btn:disabled {
+      opacity: .4;
+      cursor: default;
+    }
+
+    .file-status {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--ink-faint);
+      flex: 1;
+    }
+
+    .file-status.loaded {
+      color: var(--signal);
+    }
+
+    input[type=file] {
+      display: none;
+    }
+
+    .run-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    .btn-primary {
+      background: var(--signal);
+      color: #06150e;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 12px 22px;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #5eea9f;
+    }
+
+    .btn-primary:disabled {
+      background: var(--line);
+      color: var(--ink-faint);
+      cursor: default;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink-dim);
+      font-size: 13px;
+      padding: 10px 16px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--signal-dim);
+      color: var(--ink);
+    }
+
+    .btn-secondary:disabled {
+      opacity: .4;
+      cursor: default;
+    }
+
+    .btn-warn {
+      background: transparent;
+      border: 1px solid rgba(224, 185, 62, .4);
+      color: var(--warn);
+      font-size: 13px;
+      padding: 10px 16px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-warn:hover:not(:disabled) {
+      border-color: var(--warn);
+    }
+
+    /* ── SPINNER ── */
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--line);
+      border-top-color: var(--signal);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+
+    .spinner.show {
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .status-text {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--ink-faint);
+    }
+
+    /* ── TABLE ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th {
+      text-align: left;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px;
+      color: var(--ink-faint);
+      font-weight: 500;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    td {
+      padding: 11px 8px;
+      border-bottom: 1px solid var(--line-soft);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12.5px;
+      vertical-align: middle;
+    }
+
+    tr.good td:first-child {
+      box-shadow: inset 3px 0 0 var(--signal);
+    }
+
+    tr.bad td:first-child {
+      box-shadow: inset 3px 0 0 var(--bad);
+    }
+
+    tr.warn td:first-child {
+      box-shadow: inset 3px 0 0 var(--warn);
+    }
+
+    /* ── BADGE ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+    }
+
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .badge.green {
+      background: rgba(62, 224, 140, .12);
+      color: var(--signal);
+    }
+
+    .badge.green .badge-dot {
+      background: var(--signal);
+    }
+
+    .badge.yellow {
+      background: rgba(224, 185, 62, .12);
+      color: var(--warn);
+    }
+
+    .badge.yellow .badge-dot {
+      background: var(--warn);
+    }
+
+    .badge.red {
+      background: rgba(224, 128, 111, .12);
+      color: var(--bad);
+    }
+
+    .badge.red .badge-dot {
+      background: var(--bad);
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+    }
+
+    .status-pill.good {
+      background: rgba(62, 224, 140, .12);
+      color: var(--signal);
+    }
+
+    .status-pill.bad {
+      background: rgba(224, 128, 111, .12);
+      color: var(--bad);
+    }
+
+    .status-pill.warn {
+      background: rgba(224, 185, 62, .12);
+      color: var(--warn);
+    }
+
+    /* ── DRIFT CI ── */
+    .drift-ci {
+      font-size: 10px;
+      color: var(--ink-faint);
+      display: block;
+      margin-top: 2px;
+    }
+
+    /* ── FLAGS LIST ── */
+    .flag-tag {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin: 1px 2px;
+      background: rgba(224, 128, 111, .1);
+      color: var(--bad);
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    /* ── EXPORT ROW ── */
+    .export-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      padding: 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .fps-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .fps-field label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--ink-faint);
+    }
+
+    .fps-field input {
+      width: 64px;
+      background: #0a1712;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      padding: 8px;
+      border-radius: 2px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+    }
+
+    /* ── SWITCH LIST ── */
+    .empty-hint {
+      color: var(--ink-faint);
+      font-size: 13px;
+      font-family: 'IBM Plex Mono', monospace;
+      padding: 30px 0;
+      text-align: center;
+    }
+
+    .switch-list {
+      max-height: 340px;
+      overflow-y: auto;
+    }
+
+    .switch-item {
+      display: grid;
+      grid-template-columns: 200px 1fr 90px;
+      padding: 9px 20px;
+      border-bottom: 1px solid var(--line-soft);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+    }
+
+    .switch-item .t {
+      color: var(--ink-faint);
+    }
+
+    .switch-item .cam {
+      color: var(--ink);
+    }
+
+    .switch-item .sc {
+      color: var(--signal);
+      text-align: right;
+    }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 14px 18px;
+      border-radius: 4px;
+      font-size: 13px;
+      max-width: 360px;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all .2s ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast.error {
+      border-color: var(--bad);
+      color: var(--bad);
+    }
+
+    .toast.ok {
+      border-color: var(--signal-dim);
+      color: var(--signal);
+    }
+
+    .toast.warn {
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+
+    .note {
+      font-size: 12px;
+      color: var(--ink-faint);
+      padding: 14px 20px;
+      border-top: 1px solid var(--line-soft);
+    }
+
+    /* ── RESPONSIVE ── */
+    @media(max-width:720px) {
+      nav {
+        padding: 14px 18px;
+      }
+
+      main {
+        padding: 24px 18px 80px;
+      }
+
+      .intro {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .step-row {
+        flex-wrap: wrap;
+      }
+
+      .file-status {
+        width: 100%;
+      }
+
+      .switch-item {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav>
+    <div class="brand">
+      <div class="brand-mark"><span></span><span></span><span></span></div>
+      SyncCut
+      <span class="beta-chip">v2</span>
+    </div>
+    <div class="nav-right">
+      <span class="demo-flag" id="demo-flag">● DEMO MODE</span>
+      <span class="backend-status" id="backend-status" title="Backend connection status">⬤ checking…</span>
+      <a href="/" class="back mono">← back to site</a>
+    </div>
+  </nav>
+
+  <main>
+    <h1>Multi-camera sync dashboard</h1>
+    <p class="lead">Global GCC-PHAT alignment · Calibrated confidence badges · Drift detection &amp; correction · Active
+      speaker rough cut · FCPXML export.</p>
+
+    <!-- DEMO BANNER -->
+    <div class="intro">
+      <div class="intro-text">
+        <h2>Try it without uploading anything.</h2>
+        <p>Run a full demo project — global sync, per-camera confidence badges (green/yellow/red), drift CI, and FCPXML
+          export. Or scroll down and use your own footage.</p>
+      </div>
+      <div class="intro-actions">
+        <button class="btn-demo" id="demo-btn">▶ Run demo project</button>
+        <button class="btn-reset" id="reset-btn">Reset</button>
+      </div>
+    </div>
+
+    <!-- REVIEW REQUIRED PANEL -->
+    <div class="review-banner" id="review-banner">
+      <h3>⚠ REVIEW REQUIRED — Low-confidence sources detected</h3>
+      <ul id="review-list"></ul>
+    </div>
+
+    <!-- BACKEND ERROR BANNER -->
+    <div class="error-banner" id="error-banner"></div>
+
+    <!-- PANEL 1: FILES + OPTIONS + RUN -->
+    <div class="panel">
+      <div class="panel-head"><b>1 · Sync analysis</b><span class="mono">sync_engine.py · confidence.py ·
+          drift.py</span></div>
+      <div class="panel-body">
+
+        <!-- File selectors -->
+        <div class="step-row">
+          <div class="step-num mono">01</div>
+          <button class="file-btn" id="ref-btn">Choose reference file</button>
+          <input type="file" id="ref-input" accept=".mp4,.mov,.mkv,.wav,.mp3">
+          <div class="file-status mono" id="ref-status">(none selected)</div>
+        </div>
+        <div class="step-row">
+          <div class="step-num mono">02</div>
+          <button class="file-btn" id="inputs-btn">Add camera / source files</button>
+          <input type="file" id="inputs-input" accept=".mp4,.mov,.mkv,.wav,.mp3" multiple>
+          <div class="file-status mono" id="inputs-status">(0 files added)</div>
+        </div>
+
+        <!-- Options row -->
+        <div class="options-row">
+          <div class="opt-group">
+            <label>SYNC MODE</label>
+            <select id="sync-mode-select">
+              <option value="global">Global (recommended)</option>
+              <option value="reference">Reference only</option>
+            </select>
+          </div>
+          <label class="toggle-label">
+            <input type="checkbox" id="drift-correct-chk">
+            Auto-correct drift
+          </label>
+          <div class="opt-group">
+            <label>DRIFT WINDOW (s)</label>
+            <select id="drift-window-select">
+              <option value="30" selected>30s</option>
+              <option value="15">15s</option>
+              <option value="60">60s</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Run -->
+        <div class="run-row">
+          <button class="btn-primary" id="run-btn">Run Sync Analysis</button>
+          <div class="spinner" id="run-spinner"></div>
+          <div class="status-text" id="run-status"></div>
+        </div>
+      </div>
+
+      <!-- Results table -->
+      <table id="report-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>File</th>
+            <th>Offset (s)</th>
+            <th>Drift ms/hr</th>
+            <th>Confidence</th>
+            <th>Badge</th>
+            <th>Status</th>
+            <th>Flags</th>
+          </tr>
+        </thead>
+        <tbody id="report-body"></tbody>
+      </table>
+      <div class="empty-hint" id="report-empty">Run analysis to see per-camera offsets, drift, confidence badges, and
+        flags.</div>
+
+      <!-- Export row -->
+      <div class="export-row">
+        <div class="fps-field">
+          <label>PROJECT FPS</label>
+          <input type="number" id="fps-input" value="25" step="0.001">
+        </div>
+        <button class="btn-secondary" id="export-timeline-btn" disabled>Export Timeline (FCPXML)</button>
+        <button class="btn-secondary" id="save-report-btn" disabled>Save Report (JSON)</button>
+        <button class="btn-secondary" id="save-csv-btn" disabled>Download CSV Report</button>
+        <button class="btn-warn" id="switch-btn" disabled>Suggest Camera Switches</button>
+      </div>
+    </div>
+
+    <!-- PANEL 2: CAMERA SWITCHES -->
+    <div class="panel" id="switches-panel" style="display:none;">
+      <div class="panel-head"><b>2 · Active speaker / rough cut suggestions</b><span class="mono">rough_cut.py ·
+          ASD</span></div>
+      <div class="switch-list" id="switch-list"></div>
+      <div class="export-row">
+        <button class="btn-primary" id="export-switch-btn">Export Rough-Cut Timeline (FCPXML)</button>
+      </div>
+      <div class="note">Suggested edit only — review before finalizing. Powered by energy + spectral voice-activity
+        heuristic.</div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API = "";   // same-origin: Flask serves this page at /app
+    let sessionId = null;
+    let refFile = null;
+    let inputFiles = [];
+    let isDemo = false;
+
+    // ─── HELPERS ───────────────────────────────────────────────────────────────
+    function toast(msg, type) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show ' + (type || '');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.className = 'toast', 3800);
+    }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function showErrorBanner(msg) {
+      const b = document.getElementById('error-banner');
+      b.textContent = '⚠ ' + msg;
+      b.classList.add('show');
+    }
+    function hideErrorBanner() {
+      document.getElementById('error-banner').classList.remove('show');
+    }
+
+    // ─── BACKEND HEALTH CHECK ──────────────────────────────────────────────────
+    async function checkBackend() {
+      const el = document.getElementById('backend-status');
+      try {
+        const res = await fetch(API + '/api/session', { method: 'POST' });
+        if (!res.ok) throw new Error('non-200');
+        const data = await res.json();
+        sessionId = data.session_id;
+        el.textContent = '⬤ backend online';
+        el.className = 'backend-status online';
+        hideErrorBanner();
+      } catch (e) {
+        el.textContent = '⬤ backend offline';
+        el.className = 'backend-status offline';
+        showErrorBanner(
+          'Cannot reach Flask backend. Make sure you ran: python app.py  ' +
+          'and visit this page at http://localhost:5000/app — not as a local file.'
+        );
+      }
+    }
+    checkBackend();
+
+    async function ensureSession() {
+      if (sessionId) return sessionId;
+      // Re-try if the first check failed
+      const res = await fetch(API + '/api/session', { method: 'POST' });
+      if (!res.ok) throw new Error('Could not create session (is Flask running on port 5000?)');
+      const data = await res.json();
+      sessionId = data.session_id;
+      return sessionId;
+    }
+
+    // ─── DEMO DATA ──────────────────────────────────────────────────────────────
+    const DEMO_RESULTS = [
+      { source: "Reference", file: "cam1.mp4", offset_sec: 0.000, drift_ms_per_hour: 0.0, drift_ci_lower: 0, drift_ci_upper: 0, confidence: 1.000, badge: "green", status: "Good (reference)", robustness_flags: [] },
+      { source: "Camera A", file: "cam2.mp4", offset_sec: 1.460, drift_ms_per_hour: -2.1, drift_ci_lower: -5.2, drift_ci_upper: 1.0, confidence: 0.91, badge: "green", status: "Good", robustness_flags: [] },
+      { source: "Camera B", file: "cam3.mp4", offset_sec: 3.086, drift_ms_per_hour: -0.8, drift_ci_lower: -3.1, drift_ci_upper: 1.5, confidence: 0.62, badge: "yellow", status: "Low confidence", robustness_flags: [] },
+      { source: "Camera C", file: "cam4.mp4", offset_sec: 0.459, drift_ms_per_hour: 121.4, drift_ci_lower: 85.2, drift_ci_upper: 157.6, confidence: 0.28, badge: "red", status: "Review required", robustness_flags: ["LOW_ENERGY_SILENCE"] },
+    ];
+
+    const DEMO_SWITCHES = [
+      { start_sec: 0.0, end_sec: 4.0, camera: "Camera A", avg_score: 22.1 },
+      { start_sec: 4.0, end_sec: 9.5, camera: "Camera B", avg_score: 18.7 },
+      { start_sec: 9.5, end_sec: 24.0, camera: "Camera A", avg_score: 25.3 },
+      { start_sec: 24.0, end_sec: 27.5, camera: "Reference", avg_score: 24.1 },
+      { start_sec: 27.5, end_sec: 59.5, camera: "Camera B", avg_score: 23.8 },
+      { start_sec: 59.5, end_sec: 82.5, camera: "Camera A", avg_score: 21.2 },
+      { start_sec: 82.5, end_sec: 98.5, camera: "Camera A", avg_score: 24.5 },
+      { start_sec: 98.5, end_sec: 113.5, camera: "Camera B", avg_score: 23.9 },
+    ];
+
+    // ─── FILE PICKERS ───────────────────────────────────────────────────────────
+    document.getElementById('ref-btn').onclick = () => document.getElementById('ref-input').click();
+    document.getElementById('ref-input').onchange = e => {
+      refFile = e.target.files[0];
+      const el = document.getElementById('ref-status');
+      el.textContent = refFile ? refFile.name : '(none selected)';
+      el.classList.toggle('loaded', !!refFile);
+    };
+    document.getElementById('inputs-btn').onclick = () => document.getElementById('inputs-input').click();
+    document.getElementById('inputs-input').onchange = e => {
+      inputFiles = inputFiles.concat(Array.from(e.target.files));
+      const el = document.getElementById('inputs-status');
+      el.textContent = `(${inputFiles.length} file${inputFiles.length !== 1 ? 's' : ''} added)`;
+      el.classList.toggle('loaded', inputFiles.length > 0);
+    };
+
+    // ─── DEMO MODE ──────────────────────────────────────────────────────────────
+    document.getElementById('demo-btn').onclick = async () => {
+      isDemo = true;
+      document.getElementById('demo-btn').disabled = true;
+      document.getElementById('demo-flag').classList.add('show');
+      document.getElementById('reset-btn').classList.add('show');
+      document.getElementById('ref-btn').disabled = true;
+      document.getElementById('inputs-btn').disabled = true;
+
+      const refStatus = document.getElementById('ref-status');
+      const inputsStatus = document.getElementById('inputs-status');
+      refStatus.textContent = "cam1.mp4"; refStatus.classList.add('loaded');
+      inputsStatus.textContent = "(3 files added: cam2.mp4, cam3.mp4, cam4.mp4)";
+      inputsStatus.classList.add('loaded');
+
+      toast('Demo project loaded. Click "Run Sync Analysis".', 'ok');
+    };
+
+    document.getElementById('reset-btn').onclick = () => {
+      isDemo = false; sessionId = null; refFile = null; inputFiles = [];
+      document.getElementById('demo-btn').disabled = false;
+      document.getElementById('demo-flag').classList.remove('show');
+      document.getElementById('reset-btn').classList.remove('show');
+      document.getElementById('ref-btn').disabled = false;
+      document.getElementById('inputs-btn').disabled = false;
+      document.getElementById('ref-status').textContent = '(none selected)';
+      document.getElementById('ref-status').classList.remove('loaded');
+      document.getElementById('inputs-status').textContent = '(0 files added)';
+      document.getElementById('inputs-status').classList.remove('loaded');
+      document.getElementById('report-table').style.display = 'none';
+      document.getElementById('report-empty').style.display = 'block';
+      document.getElementById('report-body').innerHTML = '';
+      document.getElementById('switches-panel').style.display = 'none';
+      document.getElementById('switch-list').innerHTML = '';
+      document.getElementById('run-status').textContent = '';
+      document.getElementById('review-banner').classList.remove('show');
+      document.getElementById('review-list').innerHTML = '';
+      ['export-timeline-btn', 'save-report-btn', 'save-csv-btn', 'switch-btn']
+        .forEach(id => document.getElementById(id).disabled = true);
+      ensureSession().catch(() => { });
+      toast('Reset. Run demo again or upload your own footage.');
+    };
+
+    // ─── RUN SYNC ───────────────────────────────────────────────────────────────
+    document.getElementById('run-btn').onclick = async () => {
+      if (isDemo) { await runDemoSync(); return; }
+
+      if (!refFile || inputFiles.length === 0) {
+        toast('Choose a reference file and at least one source file.', 'error');
+        return;
+      }
+
+      const runBtn = document.getElementById('run-btn');
+      const spinner = document.getElementById('run-spinner');
+      const statusEl = document.getElementById('run-status');
+      runBtn.disabled = true;
+      spinner.classList.add('show');
+      statusEl.textContent = 'Connecting to backend…';
+      hideErrorBanner();
+
+      try {
+        // Ensure session INSIDE try so any fetch failure is caught & shown
+        await ensureSession();
+
+        statusEl.textContent = 'Uploading files…';
+
+        const syncMode = document.getElementById('sync-mode-select').value;
+        const driftCorrect = document.getElementById('drift-correct-chk').checked;
+        const driftWindow = document.getElementById('drift-window-select').value;
+
+        const form = new FormData();
+        form.append('session_id', sessionId);
+        form.append('reference', refFile);
+        inputFiles.forEach(f => form.append('inputs', f));
+        form.append('sync_mode', syncMode);
+        form.append('drift_correct', driftCorrect ? 'true' : 'false');
+        form.append('drift_window', driftWindow);
+
+        statusEl.textContent = 'Processing… (this may take a minute for large files)';
+
+        const res = await fetch(API + '/api/sync', { method: 'POST', body: form });
+
+        let data;
+        try {
+          data = await res.json();
+        } catch (_) {
+          throw new Error('Backend returned non-JSON — check Flask console for a traceback.');
+        }
+
+        if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+
+        renderReport(data.results);
+        statusEl.textContent = `Done — mode: ${syncMode}`;
+        enablePostSyncButtons();
+        toast('Sync analysis complete.', 'ok');
+
+        // Re-sync backend status indicator
+        document.getElementById('backend-status').textContent = '⬤ backend online';
+        document.getElementById('backend-status').className = 'backend-status online';
+
+      } catch (err) {
+        statusEl.textContent = 'Error — see message below';
+        showErrorBanner(err.message);
+        toast(err.message, 'error');
+        // If it's a connection error, refresh the backend status
+        if (err.message.includes('fetch') || err.message.includes('Failed') || err.message.includes('session')) {
+          document.getElementById('backend-status').textContent = '⬤ backend offline';
+          document.getElementById('backend-status').className = 'backend-status offline';
+        }
+      } finally {
+        runBtn.disabled = false;
+        spinner.classList.remove('show');
+      }
+    };
+
+    async function runDemoSync() {
+      const runBtn = document.getElementById('run-btn');
+      const spinner = document.getElementById('run-spinner');
+      const statusEl = document.getElementById('run-status');
+
+      runBtn.disabled = true; spinner.classList.add('show');
+      statusEl.textContent = 'Extracting audio from 4 sources…'; await sleep(600);
+      statusEl.textContent = 'Computing pairwise GCC-PHAT matrix…'; await sleep(700);
+      statusEl.textContent = 'Running global least-squares solver…'; await sleep(500);
+      statusEl.textContent = 'Scoring calibrated confidence + drift CI…'; await sleep(600);
+
+      renderReport(DEMO_RESULTS);
+      statusEl.textContent = 'Done — mode: global (demo)';
+      spinner.classList.remove('show'); runBtn.disabled = false;
+      enablePostSyncButtons();
+      toast('Demo sync complete — see confidence badges below.', 'ok');
+    }
+
+    function enablePostSyncButtons() {
+      ['export-timeline-btn', 'save-report-btn', 'save-csv-btn', 'switch-btn']
+        .forEach(id => document.getElementById(id).disabled = false);
+    }
+
+    // ─── RENDER REPORT TABLE ────────────────────────────────────────────────────
+    function renderReport(results) {
+      const tbody = document.getElementById('report-body');
+      tbody.innerHTML = '';
+
+      const reviewItems = [];
+
+      results.forEach(r => {
+        const tr = document.createElement('tr');
+        const badge = (r.badge || 'yellow');
+        let rowCls = 'warn';
+        if (badge === 'green') rowCls = 'good';
+        else if (badge === 'red') rowCls = 'bad';
+        tr.className = rowCls;
+
+        const offset = r.offset_sec !== null
+          ? (r.offset_sec >= 0 ? '+' : '') + r.offset_sec.toFixed(3) + 's'
+          : 'N/A';
+
+        const driftVal = r.drift_ms_per_hour !== null && r.drift_ms_per_hour !== undefined
+          ? r.drift_ms_per_hour : '—';
+        const driftCI = (r.drift_ci_lower !== undefined && r.drift_ci_upper !== undefined && r.drift_ci_lower !== 0)
+          ? `<span class="drift-ci">CI: [${r.drift_ci_lower}, ${r.drift_ci_upper}] ms/hr</span>` : '';
+
+        const conf = (r.confidence * 100).toFixed(1) + '%';
+
+        const badgeHtml = `<span class="badge ${badge}"><span class="badge-dot"></span>${badge.toUpperCase()}</span>`;
+
+        const flags = (r.robustness_flags || [])
+          .map(f => `<span class="flag-tag">${f}</span>`).join('') || '—';
+
+        tr.innerHTML = `
+          <td>${r.source}</td>
+          <td>${r.file}</td>
+          <td>${offset}</td>
+          <td>${driftVal}${driftCI}</td>
+          <td>${conf}</td>
+          <td>${badgeHtml}</td>
+          <td><span class="status-pill ${rowCls}">${r.status}</span></td>
+          <td>${flags}</td>
+        `;
+        tbody.appendChild(tr);
+
+        if (badge === 'red' || (r.status || '').includes('Review')) {
+          reviewItems.push(`${r.source} (${r.file}) — Conf: ${conf}, Drift: ${driftVal} ms/hr`);
+        }
+      });
+
+      document.getElementById('report-table').style.display = 'table';
+      document.getElementById('report-empty').style.display = 'none';
+
+      // Show review panel if needed
+      const reviewBanner = document.getElementById('review-banner');
+      const reviewList = document.getElementById('review-list');
+      reviewList.innerHTML = '';
+      if (reviewItems.length > 0) {
+        reviewItems.forEach(item => {
+          const li = document.createElement('li');
+          li.textContent = item;
+          reviewList.appendChild(li);
+        });
+        reviewBanner.classList.add('show');
+        reviewBanner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        reviewBanner.classList.remove('show');
+      }
+    }
+
+    // ─── SAVE REPORT JSON ───────────────────────────────────────────────────────
+    document.getElementById('save-report-btn').onclick = () => {
+      if (isDemo) {
+        const blob = new Blob([JSON.stringify(DEMO_RESULTS, null, 2)], { type: 'application/json' });
+        downloadBlob(blob, 'sync_report.demo.json');
+        toast('Demo report downloaded.', 'ok');
+        return;
+      }
+      window.location = `/api/report/download?session_id=${sessionId}`;
+    };
+
+    // ─── SAVE CSV REPORT ────────────────────────────────────────────────────────
+    document.getElementById('save-csv-btn').onclick = () => {
+      if (isDemo) {
+        const header = 'Source,File,Offset_Sec,Drift_MS_Per_HR,Drift_CI_Lower,Drift_CI_Upper,Confidence,Badge,Status,Robustness_Flags\n';
+        const rows = DEMO_RESULTS.map(r =>
+          `${r.source},${r.file},${r.offset_sec},${r.drift_ms_per_hour},${r.drift_ci_lower || ''},${r.drift_ci_upper || ''},${r.confidence},${r.badge},${r.status},"${(r.robustness_flags || []).join('; ')}"`
+        ).join('\n');
+        const blob = new Blob([header + rows], { type: 'text/csv' });
+        downloadBlob(blob, 'sync_confidence_report.demo.csv');
+        toast('Demo CSV downloaded.', 'ok');
+        return;
+      }
+      window.location = `/api/report/csv?session_id=${sessionId}`;
+    };
+
+    // ─── EXPORT TIMELINE ────────────────────────────────────────────────────────
+    document.getElementById('export-timeline-btn').onclick = async () => {
+      if (isDemo) {
+        const blob = new Blob([buildDemoFCPXML("synccut_timeline")], { type: 'application/xml' });
+        downloadBlob(blob, 'timeline.demo.fcpxml');
+        toast('Demo FCPXML downloaded — run a real sync to link to your media.', 'warn');
+        return;
+      }
+      const fps = parseFloat(document.getElementById('fps-input').value || '25');
+      try {
+        const res = await fetch(API + '/api/export/timeline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, fps })
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Export failed'); }
+        downloadBlob(await res.blob(), 'timeline.fcpxml');
+        toast('Timeline exported. File → Import → Timeline in Resolve.', 'ok');
+      } catch (err) { toast(err.message, 'error'); }
+    };
+
+    // ─── SUGGEST SWITCHES ───────────────────────────────────────────────────────
+    document.getElementById('switch-btn').onclick = async () => {
+      if (isDemo) {
+        const statusEl = document.getElementById('run-status');
+        statusEl.textContent = 'Running voice activity detection…'; await sleep(900);
+        renderSwitches(DEMO_SWITCHES);
+        document.getElementById('switches-panel').style.display = 'block';
+        document.getElementById('switches-panel').scrollIntoView({ behavior: 'smooth' });
+        statusEl.textContent = 'Done (demo)';
+        toast('Demo camera switches generated.', 'ok');
+        return;
+      }
+      try {
+        const res = await fetch(API + '/api/switches', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Switch analysis failed');
+        if (!data.segments || data.segments.length === 0) {
+          toast('No camera switches detected.', 'error'); return;
+        }
+        renderSwitches(data.segments);
+        document.getElementById('switches-panel').style.display = 'block';
+        document.getElementById('switches-panel').scrollIntoView({ behavior: 'smooth' });
+        toast(`${data.segments.length} switch segments generated.`, 'ok');
+      } catch (err) { toast(err.message, 'error'); }
+    };
+
+    function renderSwitches(segments) {
+      const list = document.getElementById('switch-list');
+      list.innerHTML = '';
+      segments.slice(0, 200).forEach(s => {
+        const dur = (s.end_sec - s.start_sec).toFixed(1);
+        const score = s.avg_score !== undefined ? s.avg_score : (s.avg_energy_db || '—');
+        const div = document.createElement('div');
+        div.className = 'switch-item';
+        div.innerHTML = `
+          <span class="t">${s.start_sec.toFixed(1)}s – ${s.end_sec.toFixed(1)}s (${dur}s)</span>
+          <span class="cam">${s.camera}</span>
+          <span class="sc">${score}</span>`;
+        list.appendChild(div);
+      });
+      if (segments.length > 200) {
+        const div = document.createElement('div');
+        div.className = 'switch-item';
+        div.innerHTML = `<span class="t"></span><span class="cam">… and ${segments.length - 200} more</span><span class="sc"></span>`;
+        list.appendChild(div);
+      }
+    }
+
+    // ─── EXPORT SWITCH TIMELINE ─────────────────────────────────────────────────
+    document.getElementById('export-switch-btn').onclick = async () => {
+      if (isDemo) {
+        const blob = new Blob([buildDemoFCPXML("synccut_rough_cut")], { type: 'application/xml' });
+        downloadBlob(blob, 'rough_cut.demo.fcpxml');
+        toast('Demo rough-cut FCPXML downloaded.', 'warn');
+        return;
+      }
+      const fps = parseFloat(document.getElementById('fps-input').value || '25');
+      try {
+        const res = await fetch(API + '/api/export/switch-timeline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, fps })
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Export failed'); }
+        downloadBlob(await res.blob(), 'rough_cut.fcpxml');
+        toast('Rough-cut timeline exported. Review before finalizing.', 'ok');
+      } catch (err) { toast(err.message, 'error'); }
+    };
+
+    // ─── DOWNLOAD HELPER ────────────────────────────────────────────────────────
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // ─── DEMO FCPXML BUILDER ────────────────────────────────────────────────────
+    function buildDemoFCPXML(name) {
+      const header = `<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.8">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s" width="1920" height="1080"/>
+    <asset id="a1" name="cam1.mp4" src="file:///demo/cam1.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>
+    <asset id="a2" name="cam2.mp4" src="file:///demo/cam2.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>
+    <asset id="a3" name="cam3.mp4" src="file:///demo/cam3.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>
+    <asset id="a4" name="cam4.mp4" src="file:///demo/cam4.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>
+  </resources>
+  <library>
+    <event name="SyncCut Demo">
+      <project name="${name}">
+        <sequence format="r1" duration="300/25s">
+          <spine>`;
+      const clips = DEMO_SWITCHES.slice(0, 8).map(s => {
+        const dur = Math.round((s.end_sec - s.start_sec) * 25);
+        const off = Math.round(s.start_sec * 25);
+        const camIdx = { "Reference": 1, "Camera A": 2, "Camera B": 3, "Camera C": 4 }[s.camera] || 1;
+        return `            <asset-clip name="${s.camera}" ref="a${camIdx}" offset="${off * 100}/2500s" duration="${dur * 100}/2500s" start="0s">
+              <marker start="0s" duration="${dur * 100}/2500s" value="Suggested Switch: ${s.camera}" note="Active speaker rough cut suggestion"/>
+            </asset-clip>`;
+      }).join('\n');
+      return header + '\n' + clips + `
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>`;
+    }
+  </script>
+
+</body>
+
+</html>

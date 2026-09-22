@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synccut"
+version = "2.0.0"
+description = "Global Multi-Source Audio-Visual Synchronization & Rough Cut Suite"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "SyncCut Team"}
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
+    "flask",
+    "opentimelineio"
+]
+
+[project.scripts]
+synccut = "synccut:main"
+synccut-gui = "synccut_gui:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"

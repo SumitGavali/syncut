@@ -1,0 +1,6 @@
+Participant_ID,Condition,Time_Manual_Sec,Time_SyncCut_Sec,Time_Saved_Pct
+P01,Manual_First,480,45,90.6
+P02,SyncCut_First,520,38,92.7
+P03,Manual_First,610,50,91.8
+P04,SyncCut_First,450,42,90.7
+P05,Manual_First,590,48,91.9

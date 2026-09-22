@@ -1,0 +1,5 @@
+Experiment,MAE_ms,Success_10ms_pct,Success_1frame_pct,ECE,AUC,RTF
+Synthetic Benchmark Suite_synccut_global_phat,0.0,100.0,100.0,0.0104,1.0,0.0251
+Synthetic Benchmark Suite_baseline_reference_only,0.0,100.0,100.0,0.0104,1.0,0.0249
+Synthetic Benchmark Suite_ablation_without_phat,24.9,0.0,100.0,0.1174,1.0,0.0269
+Synthetic Benchmark Suite_ablation_without_global_solver,0.0,100.0,100.0,0.0104,1.0,0.025

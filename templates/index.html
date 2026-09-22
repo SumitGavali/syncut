@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncCut — Stop syncing multi-cam footage by hand.</title>
+  <meta name="description"
+    content="SyncCut aligns your cameras and exports an editable rough cut for Premiere, Resolve, or Final Cut. Sync in seconds, not hours.">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg: #08100d;
+      --panel: #101f19;
+      --line: #1c3229;
+      --line-soft: #16241d;
+      --ink: #eef4f0;
+      --ink-dim: #93a89e;
+      --ink-faint: #5a6f65;
+      --signal: #3ee08c;
+      --signal-dim: #1f7a52;
+      --bad: #e0806f;
+      --warn: #e0b93e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: 'Space Grotesk', sans-serif;
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    .mono {
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img,
+    video {
+      max-width: 100%;
+      display: block;
+    }
+
+    /* NAV */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(8, 16, 13, 0.85);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 40px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .brand-mark {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+    }
+
+    .brand-mark span {
+      display: block;
+      width: 4px;
+      background: var(--signal);
+      border-radius: 1px;
+    }
+
+    .brand-mark span:nth-child(1) {
+      height: 7px;
+    }
+
+    .brand-mark span:nth-child(2) {
+      height: 18px;
+    }
+
+    .brand-mark span:nth-child(3) {
+      height: 12px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+
+    .nav-links a {
+      font-size: 13px;
+      color: var(--ink-dim);
+      transition: color .15s;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      padding: 10px 18px;
+      border-radius: 3px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--signal-dim);
+    }
+
+    .btn-solid {
+      background: var(--signal);
+      color: #06150e;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-solid:hover {
+      background: #5eea9f;
+    }
+
+    section {
+      padding: 100px 40px;
+      max-width: 1220px;
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      color: var(--signal);
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+
+    /* HERO */
+    .hero {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 56px;
+      align-items: center;
+      padding-top: 80px;
+      padding-bottom: 40px;
+    }
+
+    .hero h1 {
+      font-size: 52px;
+      line-height: 1.06;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 22px;
+    }
+
+    .hero h1 .accent {
+      color: var(--signal);
+    }
+
+    .hero p {
+      font-size: 16px;
+      color: var(--ink-dim);
+      line-height: 1.6;
+      max-width: 480px;
+      margin-bottom: 32px;
+    }
+
+    .hero-cta {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 36px;
+      flex-wrap: wrap;
+    }
+
+    .btn-big {
+      background: var(--signal);
+      color: #06150e;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-big:hover {
+      background: #5eea9f;
+    }
+
+    .btn-big-ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      padding: 13px 20px;
+      border-radius: 4px;
+      font-size: 15px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-big-ghost:hover {
+      border-color: var(--signal-dim);
+    }
+
+    .hero-meta {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--ink-faint);
+      border-top: 1px solid var(--line-soft);
+      padding-top: 16px;
+    }
+
+    .hero-meta b {
+      color: var(--signal);
+      font-weight: 500;
+    }
+
+    .hero-visual {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.7);
+      position: relative;
+    }
+
+    .hero-visual video {
+      width: 100%;
+      display: block;
+    }
+
+    .hero-video-label {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px;
+      letter-spacing: 0.1em;
+      color: var(--signal);
+      background: rgba(8, 16, 13, 0.75);
+      backdrop-filter: blur(6px);
+      padding: 5px 10px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      border: 1px solid rgba(62, 224, 140, 0.3);
+    }
+
+    /* PRODUCT DEMO — full-width video section */
+    .demo-section {
+      border-top: 1px solid var(--line-soft);
+      border-bottom: 1px solid var(--line-soft);
+      padding: 80px 40px;
+    }
+
+    .demo-inner {
+      max-width: 1220px;
+      margin: 0 auto;
+    }
+
+    .demo-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+
+    .demo-header h2 {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      max-width: 560px;
+    }
+
+    .demo-header p {
+      font-size: 14px;
+      color: var(--ink-dim);
+      max-width: 420px;
+      line-height: 1.6;
+    }
+
+    .demo-frame {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 40px 100px -40px rgba(0, 0, 0, 0.8);
+      position: relative;
+    }
+
+    .demo-frame video {
+      width: 100%;
+      display: block;
+    }
+
+    .demo-caption {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--line);
+      border-top: 1px solid var(--line);
+    }
+
+    .demo-caption-item {
+      background: var(--panel);
+      padding: 18px 22px;
+    }
+
+    .demo-caption-item b {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px;
+      letter-spacing: 0.1em;
+      color: var(--signal);
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .demo-caption-item span {
+      font-size: 13px;
+      color: var(--ink-dim);
+      line-height: 1.5;
+    }
+
+    /* SPLIT ROWS */
+    .split-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+      padding: 80px 0;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .split-row:last-child {
+      border-bottom: none;
+    }
+
+    .split-row h2 {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 18px;
+    }
+
+    .split-row h2 .accent {
+      color: var(--signal);
+    }
+
+    .split-row p {
+      color: var(--ink-dim);
+      font-size: 15px;
+      line-height: 1.65;
+      margin-bottom: 20px;
+      max-width: 460px;
+    }
+
+    .split-row ul {
+      list-style: none;
+    }
+
+    .split-row li {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12.5px;
+      color: var(--ink-dim);
+      padding: 8px 0 8px 20px;
+      position: relative;
+    }
+
+    .split-row li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: var(--signal-dim);
+    }
+
+    /* Visual stand-ins (no screenshots) */
+    .visual-block {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 280px;
+      justify-content: center;
+    }
+
+    .visual-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12.5px;
+    }
+
+    .visual-row .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--signal);
+      flex-shrink: 0;
+    }
+
+    .visual-row .dot.warn {
+      background: var(--warn);
+    }
+
+    .visual-row .dot.bad {
+      background: var(--bad);
+    }
+
+    .visual-row .label {
+      color: var(--ink-dim);
+      flex: 1;
+    }
+
+    .visual-row .val {
+      color: var(--ink);
+    }
+
+    /* Video chip inside split rows */
+    .video-chip {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .video-chip video {
+      width: 100%;
+      display: block;
+    }
+
+    .video-chip .chip-label {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px;
+      letter-spacing: 0.08em;
+      color: var(--ink);
+      background: rgba(8, 16, 13, 0.8);
+      backdrop-filter: blur(6px);
+      padding: 5px 10px;
+      border-radius: 3px;
+      border: 1px solid var(--line);
+      text-transform: uppercase;
+    }
+
+    /* COMPARE */
+    .compare-stack {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--panel);
+      margin-top: 44px;
+    }
+
+    .compare-row {
+      display: grid;
+      grid-template-columns: 1fr 40px 1fr;
+      align-items: center;
+      gap: 14px;
+      padding: 24px 26px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .compare-row:last-child {
+      border-bottom: none;
+    }
+
+    .compare-before {
+      color: var(--ink-faint);
+      font-size: 19px;
+      font-weight: 600;
+    }
+
+    .compare-after {
+      color: var(--ink);
+      font-size: 19px;
+      font-weight: 700;
+    }
+
+    .compare-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9.5px;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .compare-arrow {
+      color: var(--signal);
+      font-size: 18px;
+      text-align: center;
+    }
+
+    /* WORKFLOW */
+    .steps {
+      margin-top: 50px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .step-block {
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      gap: 24px;
+      padding: 32px 0;
+      border-top: 1px solid var(--line-soft);
+    }
+
+    .step-block:last-child {
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .step-index {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 26px;
+      color: var(--line);
+      font-weight: 600;
+    }
+
+    .step-block h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .step-block p {
+      font-size: 14px;
+      color: var(--ink-dim);
+      max-width: 560px;
+      line-height: 1.6;
+    }
+
+    /* FOUNDER */
+    .founder {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 44px;
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .founder-avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: var(--signal-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 600;
+      font-size: 18px;
+      color: #06150e;
+    }
+
+    .founder h3 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+
+    .founder p {
+      color: var(--ink-dim);
+      font-size: 15px;
+      line-height: 1.7;
+      margin-bottom: 14px;
+      max-width: 720px;
+    }
+
+    .founder p:last-child {
+      margin-bottom: 0;
+    }
+
+    .founder a {
+      color: var(--signal);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    /* BETA */
+    .beta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 40px;
+    }
+
+    .beta-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 28px;
+    }
+
+    .beta-card h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .beta-card ul {
+      list-style: none;
+    }
+
+    .beta-card li {
+      font-size: 14px;
+      color: var(--ink-dim);
+      padding: 8px 0 8px 22px;
+      position: relative;
+      line-height: 1.55;
+    }
+
+    .beta-card li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: var(--signal);
+      font-weight: 700;
+    }
+
+    /* WAITLIST */
+    .waitlist {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 56px 44px;
+      margin: 0 40px 40px;
+    }
+
+    .waitlist-inner {
+      max-width: 640px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .waitlist h2 {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+
+    .waitlist .sub {
+      color: var(--ink-dim);
+      font-size: 15px;
+      margin-bottom: 36px;
+      line-height: 1.6;
+    }
+
+    .waitlist form {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .waitlist input,
+    .waitlist select {
+      width: 100%;
+      background: #0a1712;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      padding: 14px 16px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 14px;
+    }
+
+    .waitlist input::placeholder {
+      color: var(--ink-faint);
+    }
+
+    .waitlist input:focus,
+    .waitlist select:focus {
+      outline: none;
+      border-color: var(--signal-dim);
+    }
+
+    .waitlist button {
+      background: var(--signal);
+      color: #06150e;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 15px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      margin-top: 8px;
+    }
+
+    .waitlist button:hover {
+      background: #5eea9f;
+    }
+
+    .waitlist button:disabled {
+      background: var(--line);
+      color: var(--ink-faint);
+      cursor: default;
+    }
+
+    .waitlist .fineprint {
+      font-size: 12px;
+      color: var(--ink-faint);
+      margin-top: 18px;
+      font-family: 'IBM Plex Mono', monospace;
+      line-height: 1.6;
+    }
+
+    .form-success {
+      background: rgba(62, 224, 140, 0.08);
+      border: 1px solid var(--signal-dim);
+      border-radius: 6px;
+      padding: 24px;
+      text-align: left;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .form-success b {
+      color: var(--signal);
+    }
+
+    footer {
+      border-top: 1px solid var(--line-soft);
+      padding: 36px 40px;
+      text-align: center;
+    }
+
+    footer .mono {
+      font-size: 11.5px;
+      color: var(--ink-faint);
+    }
+
+    footer a {
+      color: var(--ink-dim);
+    }
+
+    footer a:hover {
+      color: var(--ink);
+    }
+
+    @media(max-width:880px) {
+      .hero {
+        grid-template-columns: 1fr;
+        padding-top: 40px;
+        gap: 40px;
+      }
+
+      .hero h1 {
+        font-size: 34px;
+      }
+
+      .split-row {
+        grid-template-columns: 1fr;
+        gap: 30px;
+      }
+
+      .beta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+
+      .founder {
+        grid-template-columns: 1fr;
+        padding: 30px;
+      }
+
+      .waitlist {
+        padding: 36px 22px;
+        margin: 0 20px 40px;
+      }
+
+      .demo-caption {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 60px 22px;
+      }
+
+      .demo-section {
+        padding: 60px 22px;
+      }
+
+      nav {
+        padding: 14px 20px;
+      }
+
+      .nav-links {
+        display: none;
+      }
+
+      .nav-right .btn-ghost {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav>
+    <div class="brand">
+      <div class="brand-mark"><span></span><span></span><span></span></div>SyncCut
+    </div>
+    <div class="nav-links">
+      <a href="#demo">See it work</a>
+      <a href="#problem">The Problem</a>
+      <a href="#how">How it Works</a>
+      <a href="#beta">Beta Program</a>
+    </div>
+    <div class="nav-right">
+      <a href="/app" class="btn-ghost">Try the demo</a>
+      <a href="#waitlist" class="btn-solid">Request Early Access</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div>
+      <div class="eyebrow">Multi-camera sync &amp; rough cut</div>
+      <h1>Stop syncing multi-cam footage <span class="accent">by hand.</span></h1>
+      <p>SyncCut aligns your cameras and exports an editable rough cut for Premiere, Resolve, or Final Cut. Sync in
+        seconds, not hours.</p>
+      <div class="hero-cta">
+        <a href="/app.py" class="btn-big">Try the live demo →</a>
+        <a href="#waitlist" class="btn-big-ghost">Request Early Access</a>
+      </div>
+      <div class="hero-meta">Currently in <b>closed beta</b> · 20 design partner slots · Built by one editor who got
+        tired of doing this manually</div>
+    </div>
+    <div class="hero-visual">
+      <div class="hero-video-label">● Live demo</div>
+      <video autoplay muted loop playsinline poster="/static/video/proof2.jpeg">
+        <source src="/static/video/demo.mp4" type="video/mp4">
+      </video>
+    </div>
+  </section>
+
+  <!-- PRODUCT DEMO SECTION — the star of the page -->
+  <div class="demo-section" id="demo">
+    <div class="demo-inner">
+      <div class="demo-header">
+        <div>
+          <div class="eyebrow">Watch it work</div>
+          <h2>Four cameras. One synchronized timeline. In under two minutes.</h2>
+        </div>
+        <p>No signup, no upload. This is a real project — sync analysis, per-camera confidence scores, camera switch
+          suggestions, and FCPXML export.</p>
+      </div>
+
+      <div class="demo-frame">
+        <video controls playsinline preload="metadata" poster="/static/video/proof2.jpg">
+
+          <source src="/static/video/demo.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+        <div class="demo-caption">
+          <div class="demo-caption-item">
+            <b>01 · Sync</b>
+            <span>GCC-PHAT cross-correlation finds the true offset for every camera in seconds.</span>
+          </div>
+          <div class="demo-caption-item">
+            <b>02 · Score</b>
+            <span>Each source gets a calibrated confidence badge — green, yellow, or red — plus a drift estimate.</span>
+          </div>
+          <div class="demo-caption-item">
+            <b>03 · Export</b>
+            <span>A real FCPXML rough cut that opens cleanly in Resolve, Premiere, or Final Cut. Audio intact.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROBLEM -->
+  <section id="problem">
+    <div class="split-row">
+      <div>
+        <div class="eyebrow">The Problem</div>
+        <h2>Four cameras.<br>Four timelines.<br><span class="accent">One story.</span></h2>
+        <p>Manual synchronization is the most tedious part of editing. It's slow, error-prone, and kills your creative
+          momentum before you've made a single cut.</p>
+        <ul>
+          <li>No more dragging waveforms to line up transients</li>
+          <li>No more guessing offsets by ear</li>
+          <li>No more spreadsheet math to apply by hand</li>
+        </ul>
+      </div>
+      <div class="visual-block">
+        <div class="visual-row"><span class="dot warn"></span><span class="label">Camera A · offset</span><span
+            class="val">+1.460s</span></div>
+        <div class="visual-row"><span class="dot warn"></span><span class="label">Camera B · offset</span><span
+            class="val">+3.086s</span></div>
+        <div class="visual-row"><span class="dot"></span><span class="label">Camera C · offset</span><span
+            class="val">+0.459s</span></div>
+        <div class="visual-row" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
+          <span class="dot bad"></span><span class="label">Manual alignment time</span><span class="val">~47 min</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="split-row">
+      <div class="video-chip">
+        <video autoplay muted loop playsinline poster="/static/video/poster.jpg">
+          <source src="/static/video/demo.webm" type="video/webm">
+          <source src="/static/video/demo.mp4" type="video/mp4">
+        </video>
+        <div class="chip-label">Output → FCPXML in Resolve</div>
+      </div>
+      <div>
+        <div class="eyebrow">The Outcome</div>
+        <h2>Your footage is already synchronized. <span class="accent">You just haven't aligned it yet.</span></h2>
+        <p>Drop in a reference track and every camera angle. SyncCut finds the true offset for each source and builds a
+          timeline your NLE actually understands — not a spreadsheet of numbers you have to apply manually.</p>
+        <a href="/app" class="btn-big">Try the live demo →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIFFERENCE -->
+  <section id="difference">
+    <div class="eyebrow">The Difference</div>
+    <h2 style="font-size:34px; font-weight:700; letter-spacing:-0.02em; max-width:640px; line-height:1.15;">What
+      actually changes when you use SyncCut.</h2>
+
+    <div class="compare-stack">
+      <div class="compare-row">
+        <div><span class="compare-label">Before</span><span class="compare-before">An hour of waveform dragging.</span>
+        </div>
+        <div class="compare-arrow">→</div>
+        <div style="text-align:right"><span class="compare-label" style="color:var(--signal)">With SyncCut</span><span
+            class="compare-after">Seconds.</span></div>
+      </div>
+      <div class="compare-row">
+        <div><span class="compare-label">Before</span><span class="compare-before">Four separate timelines to align by
+            hand.</span></div>
+        <div class="compare-arrow">→</div>
+        <div style="text-align:right"><span class="compare-label" style="color:var(--signal)">With SyncCut</span><span
+            class="compare-after">One synchronized timeline.</span></div>
+      </div>
+      <div class="compare-row">
+        <div><span class="compare-label">Before</span><span class="compare-before">Raw camera files and a guess.</span>
+        </div>
+        <div class="compare-arrow">→</div>
+        <div style="text-align:right"><span class="compare-label" style="color:var(--signal)">With SyncCut</span><span
+            class="compare-after">An editable FCPXML rough cut.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="how">
+    <div class="eyebrow">How it Works</div>
+    <h2 style="font-size:34px; font-weight:700; letter-spacing:-0.02em;">From raw footage to rough cut.</h2>
+    <div class="steps">
+      <div class="step-block">
+        <div class="step-index">01</div>
+        <div>
+          <h3>Choose a reference file</h3>
+          <p>Pick your cleanest audio source — usually a boom or lav mic. Every camera gets aligned to it.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-index">02</div>
+        <div>
+          <h3>Add your camera sources</h3>
+          <p>Drop in every angle you shot. SyncCut extracts audio from each and runs cross-correlation against the
+            reference.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-index">03</div>
+        <div>
+          <h3>Review offset &amp; confidence</h3>
+          <p>See the exact offset, drift rate, and a calibrated confidence badge for every camera before anything gets
+            trimmed or cut.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-index">04</div>
+        <div>
+          <h3>Export &amp; edit</h3>
+          <p>Pull a synced multi-track timeline, or let SyncCut suggest camera switches and export a rough cut — ready
+            to open in your NLE.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOUNDER'S NOTE -->
+  <section id="founder">
+    <div class="eyebrow">Why this exists</div>
+    <div class="founder">
+      <div class="founder-avatar">SC</div>
+      <div>
+        <h3>I built SyncCut because I was tired of wasting the first hour of every edit syncing footage by hand.</h3>
+        <p>I edit multi-cam podcasts, interviews, and music sessions. Every single project started the same way: drag
+          waveforms, guess offsets, wonder why camera C drifted by 40 milliseconds halfway through the take. It's
+          boring, it's error-prone, and it has nothing to do with the actual craft of editing.</p>
+        <p>So I built the tool I wanted. It uses audio cross-correlation to find the true offset between sources, scores
+          its own confidence so you know when to trust it, and exports a real FCPXML your NLE actually opens — not a
+          text file shaped like an EDL.</p>
+        <p>It works. I use it on my own projects. What I don't have yet is <b>20 other editors</b> stress-testing it on
+          footage that isn't mine. That's what the beta is for — I want to find the edge cases I haven't hit yet, with
+          editors who'll tell me when it's wrong.</p>
+        <p>If that sounds like you, <a href="#waitlist">request early access below</a>. I'll reach out personally.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- BETA PROGRAM -->
+  <section id="beta">
+    <div class="eyebrow">Design Partner Program</div>
+    <h2 style="font-size:34px; font-weight:700; letter-spacing:-0.02em; max-width:640px; line-height:1.15;">We're
+      limiting access to 20 editors on purpose.</h2>
+    <p style="color:var(--ink-dim); font-size:15px; margin-top:16px; max-width:640px; line-height:1.65;">We're not
+      hiding an unfinished product. We're building it with you. Every beta user gets a direct line to the founder and
+      real influence over the roadmap.</p>
+
+    <div class="beta-grid">
+      <div class="beta-card">
+        <h3>What you get</h3>
+        <ul>
+          <li>Free access for the entire beta period</li>
+          <li>Founding-member pricing locked in at launch</li>
+          <li>A direct Slack / email line to the founder</li>
+          <li>Your requested features prioritized on the roadmap</li>
+          <li>Your name (if you want) in the launch credits</li>
+        </ul>
+      </div>
+      <div class="beta-card">
+        <h3>What we ask</h3>
+        <ul>
+          <li>Run SyncCut on 2–3 real projects within the first month</li>
+          <li>Tell us when it fails, not just when it works</li>
+          <li>15-minute feedback call after your first project</li>
+          <li>Permission to use your anonymized results as proof</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- WAITLIST -->
+  <div class="waitlist" id="waitlist">
+    <div class="waitlist-inner">
+      <div class="eyebrow" style="text-align:center;">Request Early Access</div>
+      <h2>Join the beta.</h2>
+      <p class="sub">Tell us a bit about your workflow. We'll personally reach out within 48 hours to see if you're a
+        fit for the current beta cohort.</p>
+
+      <a href="https://forms.gle/mPiSVSZUtnXpSZdHA" target="_blank" class="btn-solid"
+        style="display:block; text-align:center; padding: 16px; font-size:16px; border-radius:4px; margin-top:24px;">
+        Request Early Access →
+      </a>
+
+      <div class="fineprint">No newsletter. No drip campaign. One personal email from the founder, then a call if we're
+        a fit.</div>
+    </div>
+  </div>
+
+  <footer>
+    <span class="mono">SyncCut — offline multi-camera sync, with confidence scoring.
+  </footer>
+
+  <script>
+    const form = document.getElementById('waitlist-form');
+    const submitBtn = document.getElementById('waitlist-submit');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(form).entries());
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting…';
+      try {
+        const res = await fetch('/api/waitlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error('Request failed');
+        form.outerHTML = `
+        <div class="form-success">
+          <b>You're on the list.</b><br><br>
+          I'm building SyncCut to solve the tedious part of multi-cam editing, and I read every one of these myself. I'll reach out personally within 48 hours to learn more about your workflow and see if we're a fit for the current beta cohort.<br><br>
+          — Founder, SyncCut
+        </div>`;
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Request Early Access';
+        alert('Something went wrong. Email hello@synccut.app directly and I\'ll add you manually.');
+      }
+    });
+  </script>
+
+</body>
+
+</html>

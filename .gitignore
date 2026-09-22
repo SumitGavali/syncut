@@ -1,0 +1,12 @@
+uploads/
+_audio_cache/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+.env
+*.mp4
+*.mov
+*.wav
+*.mp3
+*.mkv
