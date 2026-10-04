@@ -42,6 +42,10 @@ UPLOAD_ROOT = os.path.join(APP_ROOT, "uploads")
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
 app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": [
+    "https://snycut-site-ten.vercel.app",
+    "http://localhost:3000"  # keep for local dev
+]}})
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024 * 1024  # 4 GB
 
 # In-memory session store — keyed per browser session

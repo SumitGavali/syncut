@@ -4,3 +4,5 @@ scipy
 scikit-learn
 matplotlib
 opentimelineio
+gunicorn
+flask-cors
