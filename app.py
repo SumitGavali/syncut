@@ -25,6 +25,7 @@ import traceback
 import uuid
 
 from flask import Flask, request, jsonify, send_file, render_template
+from flask_cors import CORS   
 from werkzeug.utils import secure_filename
 
 from confidence import badge_and_status_from_confidence
