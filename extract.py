@@ -45,7 +45,10 @@ def extract_audio_batch(input_paths, output_dir="_audio_cache", max_workers=None
     """
     from concurrent.futures import ThreadPoolExecutor
     if max_workers is None:
-        max_workers = min(len(input_paths), os.cpu_count() or 4)
+        # On memory-constrained cloud environments (e.g. Render free 512MB RAM),
+        # limit concurrent ffmpeg decoders to avoid OOM killer.
+        detected_cpus = os.cpu_count() or 1
+        max_workers = min(len(input_paths), min(detected_cpus, 2))
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(lambda p: extract_audio(p, output_dir=output_dir), input_paths))

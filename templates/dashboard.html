@@ -1823,23 +1823,49 @@
         form.append('drift_correct', driftCorrect ? 'true' : 'false');
         form.append('drift_window', driftWindow);
 
-        setProgress('Analyzing your audio — usually under a minute…');
+        // Upload footage with real-time percentage tracker
+        const data = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', API + '/api/sync');
 
-        const res = await fetch(API + '/api/sync', { method: 'POST', body: form });
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              const mbLoaded = (e.loaded / (1024 * 1024)).toFixed(1);
+              const mbTotal = (e.total / (1024 * 1024)).toFixed(1);
+              if (pct < 100) {
+                setProgress(`Uploading media files: ${pct}% (${mbLoaded} MB / ${mbTotal} MB)...`);
+              } else {
+                setProgress('Upload complete! Analyzing audio waveforms & timing...');
+              }
+            }
+          };
 
-        let data;
-        try {
-          data = await res.json();
-        } catch (_) {
-          throw new Error("Server returned an unexpected response. Check that the server is running correctly.");
-        }
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch (_) {
+                reject(new Error("Server returned an invalid JSON response."));
+              }
+            } else {
+              let errMsg = 'Server error ' + xhr.status;
+              try {
+                const parsed = JSON.parse(xhr.responseText);
+                if (parsed.error) errMsg = parsed.error;
+              } catch (_) {
+                if (xhr.status === 502 || xhr.status === 504) {
+                  errMsg = 'Server timed out or exceeded memory during video processing (502/504). On free cloud tiers, please test with shorter clips or pure audio (.wav/.mp3).';
+                }
+              }
+              reject(new Error(errMsg));
+            }
+          };
 
-        if (!res.ok) {
-          const err = friendlyError(data.error || 'Server error ' + res.status);
-          showError(err.title, err.msg, err.action, err.fn);
-          toast(err.title, 'error');
-          return;
-        }
+          xhr.onerror = () => reject(new Error('Network connection failed or server closed connection.'));
+          xhr.ontimeout = () => reject(new Error('Upload or sync request timed out.'));
+          xhr.send(form);
+        });
 
         renderReport(data.results);
         enablePostSyncButtons();
