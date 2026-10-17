@@ -60,6 +60,35 @@ def session_dir(session_id):
     return d
 
 
+def get_session(session_id):
+    """Retrieve session or initialize gracefully if server restarted."""
+    if not session_id:
+        return None
+    if session_id not in SESSIONS:
+        sdir = session_dir(session_id)
+        report_path = os.path.join(sdir, "sync_report.json")
+        report_results = []
+        if os.path.exists(report_path):
+            try:
+                with open(report_path) as f:
+                    report_results = json.load(f)
+            except Exception:
+                pass
+
+        SESSIONS[session_id] = {
+            "reference_path": None,
+            "input_paths": [],
+            "all_signals": [],
+            "fs": 16000,
+            "report_results": report_results,
+            "report_json_path": report_path if os.path.exists(report_path) else None,
+            "media_dir": sdir,
+            "last_switches": None,
+            "last_switches_media_dir": sdir,
+        }
+    return SESSIONS[session_id]
+
+
 # ─────────────────────────────── Pages ──────────────────────────────────────
 
 @app.route("/")
@@ -77,17 +106,7 @@ def dashboard():
 @app.route("/api/session", methods=["POST"])
 def new_session():
     session_id = uuid.uuid4().hex[:12]
-    SESSIONS[session_id] = {
-        "reference_path": None,
-        "input_paths": [],
-        "all_signals": [],
-        "fs": None,
-        "report_results": [],
-        "report_json_path": None,
-        "media_dir": None,
-        "last_switches": None,
-        "last_switches_media_dir": None,
-    }
+    get_session(session_id)
     return jsonify({"session_id": session_id})
 
 
@@ -101,10 +120,10 @@ def run_sync():
     Returns: sync report JSON with calibrated confidence badges and drift info.
     """
     session_id = request.form.get("session_id")
-    if not session_id or session_id not in SESSIONS:
+    state = get_session(session_id)
+    if not state:
         return jsonify({"error": "Invalid or missing session_id"}), 400
 
-    state = SESSIONS[session_id]
     sdir = session_dir(session_id)
 
     reference_file = request.files.get("reference")
@@ -116,14 +135,24 @@ def run_sync():
     drift_correct = request.form.get("drift_correct", "false").lower() == "true"
     drift_window = float(request.form.get("drift_window", DEFAULT_DRIFT_WINDOW_SEC))
 
-    # Save uploaded files
+    # Optional metadata sent from browser Web Audio extractor
+    meta_raw = request.form.get("metadata")
+    client_meta = {}
+    if meta_raw:
+        try:
+            client_meta = json.loads(meta_raw)
+        except Exception:
+            client_meta = {}
+
+    ref_orig_name = client_meta.get("reference_name") or reference_file.filename
     ref_filename = secure_filename(reference_file.filename)
     ref_path = os.path.join(sdir, ref_filename)
     reference_file.save(ref_path)
     state["reference_path"] = ref_path
 
     input_paths = []
-    for f in input_files:
+    input_orig_names = client_meta.get("input_names", [])
+    for idx, f in enumerate(input_files):
         fname = secure_filename(f.filename)
         fpath = os.path.join(sdir, fname)
         f.save(fpath)
@@ -132,16 +161,21 @@ def run_sync():
     state["media_dir"] = sdir
 
     try:
-        # Extract reference + all input audio signals concurrently across CPU cores
         all_to_extract = [ref_path] + input_paths
-        extracted_wavs = extract_audio_batch(all_to_extract)
+        extracted_wavs = []
+        for p in all_to_extract:
+            # If client uploaded audio wav directly, reuse without ffmpeg extraction
+            if p.lower().endswith(".wav"):
+                extracted_wavs.append(p)
+            else:
+                extracted_wavs.append(extract_audio(p, output_dir=os.path.join(sdir, "_audio")))
 
         ref_wav = extracted_wavs[0]
         sr_ref, ref_sig = load_wav(ref_wav)
 
         all_signals = [ref_sig]
         all_labels = ["Reference"]
-        all_files = [os.path.basename(ref_path)]
+        all_files = [os.path.basename(ref_orig_name)]
         all_paths = [ref_path]
 
         robustness_flags = {}
@@ -156,9 +190,10 @@ def run_sync():
             if flags:
                 robustness_flags[label] = flags
 
+            orig_input_name = input_orig_names[i - 1] if (i - 1) < len(input_orig_names) else os.path.basename(src_path)
             all_signals.append(src_sig)
             all_labels.append(label)
-            all_files.append(os.path.basename(src_path))
+            all_files.append(os.path.basename(orig_input_name))
             all_paths.append(src_path)
 
         # Store signals for downstream use (rough cut, etc.)
