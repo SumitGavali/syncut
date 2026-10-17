@@ -31,12 +31,13 @@ from werkzeug.utils import secure_filename
 from confidence import badge_and_status_from_confidence
 from config import DEFAULT_SYNC_MODE, DEFAULT_DRIFT_WINDOW_SEC, DRIFT_CORRECT_THRESHOLD_MS_PER_HR
 from drift import windowed_offsets, analyze_drift, correct_audio_drift_resample
-from extract import extract_audio
+from extract import extract_audio, extract_audio_batch
 from robustness import preflight_media_check, check_sample_rates
 from rough_cut import generate_active_speaker_roughcut, export_roughcut_fcpxml
 from sync_engine import load_wav, solve_multi_source_sync
 from timeline_builder import build_timeline, export_timeline
 from export_switch_timeline import build_switch_timeline
+from fcp7_exporter import export_fcp7_xml
 
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_ROOT = os.path.join(APP_ROOT, "uploads")
@@ -131,8 +132,11 @@ def run_sync():
     state["media_dir"] = sdir
 
     try:
-        # Extract all audio signals
-        ref_wav = extract_audio(ref_path)
+        # Extract reference + all input audio signals concurrently across CPU cores
+        all_to_extract = [ref_path] + input_paths
+        extracted_wavs = extract_audio_batch(all_to_extract)
+
+        ref_wav = extracted_wavs[0]
         sr_ref, ref_sig = load_wav(ref_wav)
 
         all_signals = [ref_sig]
@@ -143,7 +147,7 @@ def run_sync():
         robustness_flags = {}
         for i, src_path in enumerate(input_paths, start=1):
             label = f"Camera {chr(64 + i)}" if i <= 26 else f"Source {i}"
-            src_wav = extract_audio(src_path)
+            src_wav = extracted_wavs[i]
             sr_src, src_sig = load_wav(src_wav)
 
             # Pre-flight checks
@@ -271,20 +275,26 @@ def download_report_csv():
 
 @app.route("/api/export/timeline", methods=["POST"])
 def export_timeline_route():
-    """Export offset-aligned FCPXML multicam timeline."""
+    """Export offset-aligned timeline (FCPXML or FCP7 XML / xmeml)."""
     data = request.get_json(force=True)
     session_id = data.get("session_id")
     fps = float(data.get("fps", 25))
+    export_format = data.get("format", "fcpxml").lower()
     state = SESSIONS.get(session_id)
     if not state or not state.get("report_json_path"):
         return jsonify({"error": "Run sync analysis first."}), 400
 
     sdir = session_dir(session_id)
-    out_path = os.path.join(sdir, "timeline.fcpxml")
     try:
-        tl = build_timeline(state["report_json_path"], state["media_dir"], fps=fps)
-        export_timeline(tl, out_path)
-        return send_file(out_path, as_attachment=True, download_name="timeline.fcpxml")
+        if export_format in ("fcp7", "xmeml", "xml"):
+            out_path = os.path.join(sdir, "timeline_premiere.xml")
+            export_fcp7_xml(state["report_json_path"], state["media_dir"], out_path, fps=fps)
+            return send_file(out_path, as_attachment=True, download_name="timeline_premiere.xml")
+        else:
+            out_path = os.path.join(sdir, "timeline.fcpxml")
+            tl = build_timeline(state["report_json_path"], state["media_dir"], fps=fps)
+            export_timeline(tl, out_path)
+            return send_file(out_path, as_attachment=True, download_name="timeline.fcpxml")
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

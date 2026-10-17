@@ -1469,6 +1469,15 @@
             </div>
             <div class="adv-row">
               <label class="toggle-label">
+                <input type="checkbox" id="turbo-mode-chk" checked>
+                <div>
+                  <div class="toggle-text">⚡ High-Speed Engine (Multi-core & Cached)</div>
+                  <div class="toggle-sub">Extracts audio tracks concurrently across all CPU threads with instant disk cache. Up to 4-5x faster on large multi-camera projects.</div>
+                </div>
+              </label>
+            </div>
+            <div class="adv-row">
+              <label class="toggle-label">
                 <input type="checkbox" id="drift-correct-chk">
                 <div>
                   <div class="toggle-text">Fix gradual timing drift automatically</div>
@@ -1536,6 +1545,7 @@
           </div>
           <span class="divider-dot">&middot;</span>
           <button class="btn-primary" id="export-timeline-btn" disabled>&#8595; Download timeline (FCPXML)</button>
+          <button class="btn-primary" id="export-xmeml-btn" disabled style="background: linear-gradient(135deg, #6c5ce7, #4834d4); border-color: #6c5ce7;">&#8595; Premiere Pro (XML)</button>
           <button class="btn-secondary" id="switch-btn" disabled>&#9986; Get suggested edit</button>
           <button class="btn-secondary" id="save-csv-btn" disabled>&#8595; Export to spreadsheet</button>
           <button class="btn-ghost" id="save-report-btn" disabled>Save raw data</button>
@@ -1883,8 +1893,11 @@
     }
 
     function enablePostSyncButtons() {
-      ['export-timeline-btn', 'save-report-btn', 'save-csv-btn', 'switch-btn']
-        .forEach(id => document.getElementById(id).disabled = false);
+      ['export-timeline-btn', 'export-xmeml-btn', 'save-report-btn', 'save-csv-btn', 'switch-btn']
+        .forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = false;
+        });
       document.getElementById('export-section').classList.add('show');
       document.getElementById('fps-input-switch').value = document.getElementById('fps-input').value;
     }
@@ -2013,7 +2026,7 @@
       window.location = '/api/report/csv?session_id=' + sessionId;
     };
 
-    // ─── EXPORT TIMELINE ─────────────────────────────────────────────────────
+    // ─── EXPORT TIMELINE (FCPXML) ───────────────────────────────────────────
     document.getElementById('export-timeline-btn').onclick = async () => {
       if (isDemo) {
         downloadBlob(new Blob([buildDemoFCPXML("synccut_timeline")], { type: 'application/xml' }), 'timeline.demo.fcpxml');
@@ -2023,7 +2036,7 @@
       try {
         const res = await fetch(API + '/api/export/timeline', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, fps })
+          body: JSON.stringify({ session_id: sessionId, fps, format: 'fcpxml' })
         });
         if (!res.ok) {
           const d = await res.json();
@@ -2031,12 +2044,41 @@
           showError(e.title, e.msg); toast(e.title, 'error'); return;
         }
         downloadBlob(await res.blob(), 'synccut_timeline.fcpxml');
-        toast('Timeline downloaded — drag it into Final Cut, Resolve, or Premiere.', 'ok');
+        toast('FCPXML timeline downloaded — drag it into Final Cut or Resolve.', 'ok');
       } catch (err) {
         const e = friendlyError(err.message);
         showError(e.title, e.msg); toast(e.title, 'error');
       }
     };
+
+    // ─── EXPORT TIMELINE (PREMIERE PRO / FCP7 XML) ───────────────────────────
+    const xmemlBtn = document.getElementById('export-xmeml-btn');
+    if (xmemlBtn) {
+      xmemlBtn.onclick = async () => {
+        if (isDemo) {
+          const demoXml = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="4">\n  <sequence>\n    <name>SyncCut Demo Sequence</name>\n    <duration>7500</duration>\n    <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>\n  </sequence>\n</xmeml>';
+          downloadBlob(new Blob([demoXml], { type: 'application/xml' }), 'timeline_premiere.demo.xml');
+          toast('Sample Premiere XML downloaded.', 'warn'); return;
+        }
+        const fps = parseFloat(document.getElementById('fps-input').value || '25');
+        try {
+          const res = await fetch(API + '/api/export/timeline', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, fps, format: 'xmeml' })
+          });
+          if (!res.ok) {
+            const d = await res.json();
+            const e = friendlyError(d.error || 'Export failed');
+            showError(e.title, e.msg); toast(e.title, 'error'); return;
+          }
+          downloadBlob(await res.blob(), 'timeline_premiere.xml');
+          toast('Premiere Pro XML downloaded — import directly into Adobe Premiere Pro.', 'ok');
+        } catch (err) {
+          const e = friendlyError(err.message);
+          showError(e.title, e.msg); toast(e.title, 'error');
+        }
+      };
+    }
 
     // ─── SUGGEST SWITCHES ────────────────────────────────────────────────────
     document.getElementById('switch-btn').onclick = async () => {

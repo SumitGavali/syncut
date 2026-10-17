@@ -9,12 +9,20 @@ TARGET_SR = 16000  # 16kHz mono is plenty for timing correlation (Module 5 reaso
 
 def extract_audio(input_path, output_dir="_audio_cache"):
     """
-    Extract mono 16kHz WAV from any video or audio file.
+    Extract mono 16kHz WAV from any video or audio file with fast caching.
     Returns path to the extracted wav.
     """
     os.makedirs(output_dir, exist_ok=True)
     base = os.path.splitext(os.path.basename(input_path))[0]
     out_path = os.path.join(output_dir, f"{base}.wav")
+
+    # Fast cache check: if out_path exists and has non-zero size, reuse it
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 44:
+        try:
+            if os.path.getmtime(out_path) >= os.path.getmtime(input_path):
+                return out_path
+        except OSError:
+            pass
 
     cmd = [
         "ffmpeg", "-y", "-i", input_path,
@@ -28,6 +36,19 @@ def extract_audio(input_path, output_dir="_audio_cache"):
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg failed on {input_path}:\n{result.stderr}")
     return out_path
+
+
+def extract_audio_batch(input_paths, output_dir="_audio_cache", max_workers=None):
+    """
+    Extract audio for multiple files concurrently across CPU cores.
+    Significantly speeds up multi-camera ingest for wedding/event footage.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    if max_workers is None:
+        max_workers = min(len(input_paths), os.cpu_count() or 4)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(lambda p: extract_audio(p, output_dir=output_dir), input_paths))
 
 
 def get_duration(input_path):

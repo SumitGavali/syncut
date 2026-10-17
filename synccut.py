@@ -14,7 +14,7 @@ import sys
 from confidence import badge_and_status_from_confidence, extract_correlation_features
 from config import DEFAULT_SYNC_MODE, DEFAULT_DRIFT_WINDOW_SEC, DRIFT_CORRECT_THRESHOLD_MS_PER_HR
 from drift import windowed_offsets, analyze_drift, correct_audio_drift_resample
-from extract import extract_audio
+from extract import extract_audio, extract_audio_batch
 from robustness import preflight_media_check, check_sample_rates
 from sync_engine import load_wav, solve_multi_source_sync
 
@@ -35,9 +35,9 @@ def process_all_sources(reference_path, input_paths, sync_mode="global", drift_c
     all_paths = [reference_path] + input_paths
     labels = ["Reference"] + [f"Camera {chr(65+i)}" if i < 26 else f"Source {i+1}" for i in range(len(input_paths))]
 
-    for idx, src_path in enumerate(input_paths):
-        print(f"  Extracting audio for source {idx+1}: {os.path.basename(src_path)}")
-        src_wav = extract_audio(src_path)
+    print(f"  Extracting audio for {len(input_paths)} sources in parallel...")
+    extracted_wavs = extract_audio_batch(input_paths)
+    for idx, src_wav in enumerate(extracted_wavs):
         sr_src, src_sig = load_wav(src_wav)
         sr_ok, msg = check_sample_rates(sr_ref, sr_src)
         if not sr_ok:
