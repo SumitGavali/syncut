@@ -4,15 +4,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SyncCut — Stop syncing multi-cam footage by hand.</title>
+  <title>SyncCut — Multi-camera audio sync &amp; rough cut for video editors</title>
   <meta name="description"
-    content="SyncCut aligns your cameras and exports an editable rough cut for Premiere, Resolve, or Final Cut. Sync in seconds, not hours.">
+    content="SyncCut aligns multi-camera footage by audio cross-correlation and exports synchronized sequences for Premiere, Resolve, and Final Cut Pro.">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
     :root {
       --bg: #08100d;
       --panel: #101f19;
+      --panel-hover: #142720;
       --line: #1c3229;
       --line-soft: #16241d;
       --ink: #eef4f0;
@@ -20,6 +21,7 @@
       --ink-faint: #5a6f65;
       --signal: #3ee08c;
       --signal-dim: #1f7a52;
+      --signal-bg: rgba(62, 224, 140, 0.1);
       --bad: #e0806f;
       --warn: #e0b93e;
     }
@@ -57,12 +59,25 @@
       display: block;
     }
 
+    .icon {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
     /* NAV */
     nav {
       position: sticky;
       top: 0;
       z-index: 50;
-      background: rgba(8, 16, 13, 0.85);
+      background: rgba(8, 16, 13, 0.92);
       backdrop-filter: blur(10px);
       display: flex;
       align-items: center;
@@ -94,17 +109,9 @@
       border-radius: 1px;
     }
 
-    .brand-mark span:nth-child(1) {
-      height: 7px;
-    }
-
-    .brand-mark span:nth-child(2) {
-      height: 18px;
-    }
-
-    .brand-mark span:nth-child(3) {
-      height: 12px;
-    }
+    .brand-mark span:nth-child(1) { height: 7px; }
+    .brand-mark span:nth-child(2) { height: 18px; }
+    .brand-mark span:nth-child(3) { height: 12px; }
 
     .nav-links {
       display: flex;
@@ -133,14 +140,19 @@
       border: 1px solid var(--line);
       color: var(--ink);
       padding: 10px 18px;
-      border-radius: 3px;
+      border-radius: 4px;
       font-size: 13px;
       cursor: pointer;
       font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: border-color .15s, background .15s;
     }
 
     .btn-ghost:hover {
       border-color: var(--signal-dim);
+      background: rgba(62, 224, 140, 0.04);
     }
 
     .btn-solid {
@@ -150,9 +162,13 @@
       font-size: 13px;
       padding: 10px 18px;
       border: none;
-      border-radius: 3px;
+      border-radius: 4px;
       cursor: pointer;
       font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: background .15s;
     }
 
     .btn-solid:hover {
@@ -160,8 +176,8 @@
     }
 
     section {
-      padding: 100px 40px;
-      max-width: 1220px;
+      padding: 80px 40px;
+      max-width: 1140px;
       margin: 0 auto;
     }
 
@@ -171,7 +187,10 @@
       letter-spacing: 0.14em;
       color: var(--signal);
       text-transform: uppercase;
-      margin-bottom: 18px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     /* HERO */
@@ -180,16 +199,16 @@
       grid-template-columns: 1.05fr 1fr;
       gap: 56px;
       align-items: center;
-      padding-top: 80px;
-      padding-bottom: 40px;
+      padding-top: 70px;
+      padding-bottom: 50px;
     }
 
     .hero h1 {
-      font-size: 52px;
-      line-height: 1.06;
+      font-size: 46px;
+      line-height: 1.1;
       font-weight: 700;
       letter-spacing: -0.025em;
-      margin-bottom: 22px;
+      margin-bottom: 20px;
     }
 
     .hero h1 .accent {
@@ -201,14 +220,14 @@
       color: var(--ink-dim);
       line-height: 1.6;
       max-width: 480px;
-      margin-bottom: 32px;
+      margin-bottom: 30px;
     }
 
     .hero-cta {
       display: flex;
       align-items: center;
       gap: 14px;
-      margin-bottom: 36px;
+      margin-bottom: 30px;
       flex-wrap: wrap;
     }
 
@@ -225,6 +244,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      transition: background .15s;
     }
 
     .btn-big:hover {
@@ -240,6 +260,10 @@
       font-size: 15px;
       cursor: pointer;
       font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: border-color .15s;
     }
 
     .btn-big-ghost:hover {
@@ -273,317 +297,303 @@
       display: block;
     }
 
-    .hero-video-label {
+    .video-fallback-link {
+      display: block;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--ink-dim);
+      background: #0a1712;
+      border-top: 1px solid var(--line-soft);
+      text-align: center;
+    }
+
+    .video-fallback-link a {
+      color: var(--signal);
+      text-decoration: underline;
+    }
+
+    .sample-badge {
       position: absolute;
       top: 14px;
       left: 14px;
       font-family: 'IBM Plex Mono', monospace;
-      font-size: 10.5px;
-      letter-spacing: 0.1em;
+      font-size: 11px;
+      letter-spacing: 0.08em;
       color: var(--signal);
-      background: rgba(8, 16, 13, 0.75);
+      background: rgba(8, 16, 13, 0.85);
       backdrop-filter: blur(6px);
       padding: 5px 10px;
       border-radius: 3px;
-      text-transform: uppercase;
       border: 1px solid rgba(62, 224, 140, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    /* PRODUCT DEMO — full-width video section */
-    .demo-section {
+    /* 3-STEP FLOW */
+    .flow-section {
       border-top: 1px solid var(--line-soft);
       border-bottom: 1px solid var(--line-soft);
-      padding: 80px 40px;
+      background: rgba(16, 31, 25, 0.25);
     }
 
-    .demo-inner {
-      max-width: 1220px;
-      margin: 0 auto;
+    .flow-header {
+      margin-bottom: 40px;
     }
 
-    .demo-header {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 24px;
-      margin-bottom: 32px;
-      flex-wrap: wrap;
-    }
-
-    .demo-header h2 {
-      font-size: 34px;
+    .flow-header h2 {
+      font-size: 32px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      line-height: 1.15;
-      max-width: 560px;
+      margin-bottom: 12px;
     }
 
-    .demo-header p {
-      font-size: 14px;
-      color: var(--ink-dim);
-      max-width: 420px;
-      line-height: 1.6;
-    }
-
-    .demo-frame {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 40px 100px -40px rgba(0, 0, 0, 0.8);
-      position: relative;
-    }
-
-    .demo-frame video {
-      width: 100%;
-      display: block;
-    }
-
-    .demo-caption {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1px;
-      background: var(--line);
-      border-top: 1px solid var(--line);
-    }
-
-    .demo-caption-item {
-      background: var(--panel);
-      padding: 18px 22px;
-    }
-
-    .demo-caption-item b {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 10.5px;
-      letter-spacing: 0.1em;
-      color: var(--signal);
-      text-transform: uppercase;
-      display: block;
-      margin-bottom: 6px;
-    }
-
-    .demo-caption-item span {
-      font-size: 13px;
-      color: var(--ink-dim);
-      line-height: 1.5;
-    }
-
-    /* SPLIT ROWS */
-    .split-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 60px;
-      align-items: center;
-      padding: 80px 0;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .split-row:last-child {
-      border-bottom: none;
-    }
-
-    .split-row h2 {
-      font-size: 34px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.15;
-      margin-bottom: 18px;
-    }
-
-    .split-row h2 .accent {
-      color: var(--signal);
-    }
-
-    .split-row p {
+    .flow-header p {
       color: var(--ink-dim);
       font-size: 15px;
-      line-height: 1.65;
-      margin-bottom: 20px;
-      max-width: 460px;
+      max-width: 600px;
     }
 
-    .split-row ul {
-      list-style: none;
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
     }
 
-    .split-row li {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 12.5px;
-      color: var(--ink-dim);
-      padding: 8px 0 8px 20px;
-      position: relative;
-    }
-
-    .split-row li::before {
-      content: '—';
-      position: absolute;
-      left: 0;
-      color: var(--signal-dim);
-    }
-
-    /* Visual stand-ins (no screenshots) */
-    .visual-block {
+    .flow-card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 32px;
+      border-radius: 8px;
+      padding: 28px 24px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
-      min-height: 280px;
+      gap: 12px;
+    }
+
+    .flow-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .flow-number {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--signal);
+    }
+
+    .flow-icon-wrap {
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      background: var(--signal-bg);
+      color: var(--signal);
+      display: flex;
+      align-items: center;
       justify-content: center;
     }
 
-    .visual-row {
+    .flow-card h3 {
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    .flow-card p {
+      font-size: 14px;
+      color: var(--ink-dim);
+      line-height: 1.6;
+    }
+
+    .flow-detail {
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid var(--line-soft);
+      font-size: 12px;
+      color: var(--ink-faint);
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    /* CASE STUDY */
+    .case-section {
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .case-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 40px;
+      align-items: center;
+    }
+
+    .case-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .case-card-header {
+      padding: 12px 18px;
+      background: rgba(0, 0, 0, 0.25);
+      border-bottom: 1px solid var(--line-soft);
       display: flex;
       align-items: center;
-      gap: 12px;
-      font-family: 'IBM Plex Mono', monospace;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .case-card-title {
+      font-weight: 600;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .case-table {
+      width: 100%;
+      border-collapse: collapse;
       font-size: 12.5px;
     }
 
-    .visual-row .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--signal);
-      flex-shrink: 0;
+    .case-table th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 10.5px;
+      color: var(--ink-faint);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-bottom: 1px solid var(--line);
     }
 
-    .visual-row .dot.warn {
-      background: var(--warn);
-    }
-
-    .visual-row .dot.bad {
-      background: var(--bad);
-    }
-
-    .visual-row .label {
+    .case-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line-soft);
       color: var(--ink-dim);
-      flex: 1;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
-    .visual-row .val {
-      color: var(--ink);
+    .case-table tr:last-child td {
+      border-bottom: none;
     }
 
-    /* Video chip inside split rows */
-    .video-chip {
-      background: var(--panel);
+    .badge-locked {
+      color: var(--signal);
+      background: var(--signal-bg);
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10.5px;
+      font-weight: 500;
+    }
+
+    .case-img-wrap {
+      margin-top: 14px;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 6px;
       overflow: hidden;
-      position: relative;
+      background: #000;
     }
 
-    .video-chip video {
+    .case-img-wrap img {
       width: 100%;
       display: block;
     }
 
-    .video-chip .chip-label {
-      position: absolute;
-      bottom: 12px;
-      left: 12px;
+    .case-caption {
+      font-size: 11px;
+      color: var(--ink-faint);
+      padding: 8px 12px;
+      background: #0a1712;
+      border-top: 1px solid var(--line-soft);
       font-family: 'IBM Plex Mono', monospace;
-      font-size: 10.5px;
-      letter-spacing: 0.08em;
-      color: var(--ink);
-      background: rgba(8, 16, 13, 0.8);
-      backdrop-filter: blur(6px);
-      padding: 5px 10px;
-      border-radius: 3px;
-      border: 1px solid var(--line);
-      text-transform: uppercase;
     }
 
-    /* COMPARE */
-    .compare-stack {
+    /* PRIVACY & LIMITS */
+    .privacy-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 30px;
+    }
+
+    .info-card {
+      background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      overflow: hidden;
-      background: var(--panel);
-      margin-top: 44px;
+      padding: 24px;
     }
 
-    .compare-row {
-      display: grid;
-      grid-template-columns: 1fr 40px 1fr;
-      align-items: center;
-      gap: 14px;
-      padding: 24px 26px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .compare-row:last-child {
-      border-bottom: none;
-    }
-
-    .compare-before {
-      color: var(--ink-faint);
-      font-size: 19px;
+    .info-card h3 {
+      font-size: 16px;
       font-weight: 600;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .compare-after {
-      color: var(--ink);
-      font-size: 19px;
-      font-weight: 700;
-    }
-
-    .compare-label {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 9.5px;
-      color: var(--ink-faint);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      display: block;
-      margin-bottom: 6px;
-    }
-
-    .compare-arrow {
-      color: var(--signal);
-      font-size: 18px;
-      text-align: center;
-    }
-
-    /* WORKFLOW */
-    .steps {
-      margin-top: 50px;
+    .info-card ul {
+      list-style: none;
       display: flex;
       flex-direction: column;
+      gap: 10px;
     }
 
-    .step-block {
-      display: grid;
-      grid-template-columns: 70px 1fr;
-      gap: 24px;
-      padding: 32px 0;
-      border-top: 1px solid var(--line-soft);
+    .info-card li {
+      font-size: 13.5px;
+      color: var(--ink-dim);
+      line-height: 1.55;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
     }
 
-    .step-block:last-child {
-      border-bottom: 1px solid var(--line-soft);
+    .info-bullet {
+      color: var(--signal);
+      margin-top: 2px;
+      flex-shrink: 0;
     }
 
-    .step-index {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 26px;
-      color: var(--line);
+    /* FAQ */
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .faq-item {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .faq-question {
+      padding: 18px 22px;
+      font-size: 15px;
       font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+      transition: background .15s;
     }
 
-    .step-block h3 {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 8px;
+    .faq-question:hover {
+      background: var(--panel-hover);
     }
 
-    .step-block p {
+    .faq-answer {
+      padding: 0 22px 18px;
       font-size: 14px;
       color: var(--ink-dim);
-      max-width: 560px;
       line-height: 1.6;
+      border-top: 1px solid var(--line-soft);
+      padding-top: 14px;
     }
 
     /* FOUNDER */
@@ -591,118 +601,94 @@
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 10px;
-      padding: 44px;
+      padding: 36px;
       display: grid;
-      grid-template-columns: 64px 1fr;
-      gap: 24px;
+      grid-template-columns: 80px 1fr;
+      gap: 28px;
       align-items: start;
     }
 
-    .founder-avatar {
-      width: 64px;
-      height: 64px;
+    .founder-photo {
+      width: 80px;
+      height: 80px;
       border-radius: 50%;
-      background: var(--signal-dim);
+      background: var(--signal-bg);
+      border: 2px solid var(--signal-dim);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-family: 'IBM Plex Mono', monospace;
-      font-weight: 600;
-      font-size: 18px;
-      color: #06150e;
+      color: var(--signal);
+      overflow: hidden;
     }
 
-    .founder h3 {
+    .founder-content h3 {
       font-size: 20px;
       font-weight: 600;
-      margin-bottom: 14px;
+      margin-bottom: 6px;
     }
 
-    .founder p {
+    .founder-cred {
+      font-size: 13px;
+      color: var(--signal);
+      font-family: 'IBM Plex Mono', monospace;
+      margin-bottom: 16px;
+    }
+
+    .founder-content p {
       color: var(--ink-dim);
-      font-size: 15px;
-      line-height: 1.7;
+      font-size: 14.5px;
+      line-height: 1.65;
       margin-bottom: 14px;
       max-width: 720px;
     }
 
-    .founder p:last-child {
-      margin-bottom: 0;
+    .founder-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
     }
 
-    .founder a {
-      color: var(--signal);
-      text-decoration: underline;
-      text-underline-offset: 3px;
-    }
-
-    /* BETA */
-    .beta-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      margin-top: 40px;
-    }
-
-    .beta-card {
-      background: var(--panel);
+    .btn-contact {
+      background: #0a1712;
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 28px;
+      color: var(--ink);
+      padding: 10px 18px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: border-color .15s, background .15s;
     }
 
-    .beta-card h3 {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 16px;
+    .btn-contact:hover {
+      border-color: var(--signal-dim);
+      background: rgba(62, 224, 140, 0.05);
     }
 
-    .beta-card ul {
-      list-style: none;
-    }
-
-    .beta-card li {
-      font-size: 14px;
-      color: var(--ink-dim);
-      padding: 8px 0 8px 22px;
-      position: relative;
-      line-height: 1.55;
-    }
-
-    .beta-card li::before {
-      content: '✓';
-      position: absolute;
-      left: 0;
-      color: var(--signal);
-      font-weight: 700;
-    }
-
-    /* WAITLIST */
+    /* SIGNUP / WAITLIST */
     .waitlist {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 56px 44px;
-      margin: 0 40px 40px;
-    }
-
-    .waitlist-inner {
-      max-width: 640px;
-      margin: 0 auto;
-      text-align: center;
+      border-radius: 10px;
+      padding: 44px 36px;
+      margin: 40px auto 80px;
+      max-width: 720px;
     }
 
     .waitlist h2 {
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      margin-bottom: 14px;
+      margin-bottom: 8px;
     }
 
     .waitlist .sub {
       color: var(--ink-dim);
-      font-size: 15px;
-      margin-bottom: 36px;
+      font-size: 14.5px;
+      margin-bottom: 24px;
       line-height: 1.6;
     }
 
@@ -718,20 +704,28 @@
       gap: 14px;
     }
 
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 12px;
+      color: var(--ink-faint);
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
     .waitlist input,
     .waitlist select {
       width: 100%;
       background: #0a1712;
       border: 1px solid var(--line);
       color: var(--ink);
-      padding: 14px 16px;
+      padding: 12px 14px;
       border-radius: 4px;
       font-family: inherit;
       font-size: 14px;
-    }
-
-    .waitlist input::placeholder {
-      color: var(--ink-faint);
     }
 
     .waitlist input:focus,
@@ -740,43 +734,11 @@
       border-color: var(--signal-dim);
     }
 
-    .waitlist button {
-      background: var(--signal);
-      color: #06150e;
-      font-weight: 600;
-      font-size: 15px;
-      padding: 15px 24px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-family: inherit;
-      margin-top: 8px;
-    }
-
-    .waitlist button:hover {
-      background: #5eea9f;
-    }
-
-    .waitlist button:disabled {
-      background: var(--line);
-      color: var(--ink-faint);
-      cursor: default;
-    }
-
-    .waitlist .fineprint {
-      font-size: 12px;
-      color: var(--ink-faint);
-      margin-top: 18px;
-      font-family: 'IBM Plex Mono', monospace;
-      line-height: 1.6;
-    }
-
     .form-success {
       background: rgba(62, 224, 140, 0.08);
       border: 1px solid var(--signal-dim);
       border-radius: 6px;
-      padding: 24px;
-      text-align: left;
+      padding: 20px;
       color: var(--ink);
       font-size: 14px;
       line-height: 1.6;
@@ -788,79 +750,44 @@
 
     footer {
       border-top: 1px solid var(--line-soft);
-      padding: 36px 40px;
+      padding: 32px 40px;
       text-align: center;
-    }
-
-    footer .mono {
-      font-size: 11.5px;
+      font-size: 12px;
       color: var(--ink-faint);
+      font-family: 'IBM Plex Mono', monospace;
     }
 
-    footer a {
-      color: var(--ink-dim);
-    }
-
-    footer a:hover {
-      color: var(--ink);
-    }
-
-    @media(max-width:880px) {
-      .hero {
-        grid-template-columns: 1fr;
-        padding-top: 40px;
-        gap: 40px;
-      }
-
-      .hero h1 {
-        font-size: 34px;
-      }
-
-      .split-row {
-        grid-template-columns: 1fr;
-        gap: 30px;
-      }
-
-      .beta-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .form-row {
-        grid-template-columns: 1fr;
-      }
-
-      .founder {
-        grid-template-columns: 1fr;
-        padding: 30px;
-      }
-
-      .waitlist {
-        padding: 36px 22px;
-        margin: 0 20px 40px;
-      }
-
-      .demo-caption {
-        grid-template-columns: 1fr;
-      }
-
-      section {
-        padding: 60px 22px;
-      }
-
-      .demo-section {
-        padding: 60px 22px;
-      }
-
+    @media (max-width: 860px) {
       nav {
         padding: 14px 20px;
       }
-
       .nav-links {
         display: none;
       }
-
-      .nav-right .btn-ghost {
-        display: none;
+      section {
+        padding: 50px 20px;
+      }
+      .hero {
+        grid-template-columns: 1fr;
+        padding-top: 30px;
+        gap: 36px;
+      }
+      .hero h1 {
+        font-size: 34px;
+      }
+      .flow-grid,
+      .case-grid,
+      .privacy-grid,
+      .form-row,
+      .founder {
+        grid-template-columns: 1fr;
+      }
+      .founder {
+        padding: 24px;
+      }
+      .waitlist {
+        padding: 28px 20px;
+        margin: 20px 20px 60px;
       }
     }
   </style>
@@ -868,304 +795,411 @@
 
 <body>
 
+  <!-- NAV -->
   <nav>
     <div class="brand">
-      <div class="brand-mark"><span></span><span></span><span></span></div>SyncCut
+      <div class="brand-mark"><span></span><span></span><span></span></div>
+      SyncCut
     </div>
     <div class="nav-links">
-      <a href="#demo">See it work</a>
-      <a href="#problem">The Problem</a>
-      <a href="#how">How it Works</a>
-      <a href="#contact">Contant us</a>
-      <a href="#beta">Beta Program</a>
+      <a href="#how">How it works</a>
+      <a href="#case">Sample test</a>
+      <a href="#privacy">Privacy &amp; limits</a>
+      <a href="#faq">FAQ</a>
+      <a href="#contact">Contact</a>
     </div>
     <div class="nav-right">
-      <a href="/app" class="btn-ghost">Try the demo</a>
-      <a href="#waitlist" class="btn-solid">Request Early Access</a>
+      <a href="/app" class="btn-ghost">
+        <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Try sample project
+      </a>
+      <a href="#waitlist" class="btn-solid">Join beta</a>
     </div>
   </nav>
 
   <!-- HERO -->
   <section class="hero">
     <div>
-      <div class="eyebrow">Multi-camera sync &amp; rough cut</div>
-      <h1>Stop syncing multi-cam footage <span class="accent">by hand.</span></h1>
-      <p>SyncCut aligns your cameras and exports an editable rough cut for Premiere, Resolve, or Final Cut. Sync in
-        seconds, not hours.</p>
-      <div class="hero-cta">
-        <a href="/app.py" class="btn-big">Try the live demo →</a>
-        <a href="#waitlist" class="btn-big-ghost">Request Early Access</a>
+      <div class="eyebrow">
+        <svg class="icon" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+        Multi-camera audio sync &amp; rough cut
       </div>
-      <div class="hero-meta">Currently in <b>closed beta</b> · 20 design partner slots </div>
+      <h1>Stop syncing multi-cam footage <span class="accent">by hand.</span></h1>
+      <p>SyncCut aligns your camera angles by audio cross-correlation and exports an offset-matched sequence directly into Premiere, DaVinci Resolve, or Final Cut Pro.</p>
+      <div class="hero-cta">
+        <a href="/app" class="btn-big">
+          <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Try the sample project
+        </a>
+        <a href="#waitlist" class="btn-big-ghost">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+          Join beta
+        </a>
+      </div>
+      <div class="hero-meta">Currently in <b>public beta</b> · Direct FCPXML &amp; Premiere XML exports</div>
     </div>
     <div class="hero-visual">
-      <div class="hero-video-label">● Live demo</div>
-      <video autoplay muted loop playsinline poster="/static/video/proof2.jpeg">
+      <div class="sample-badge">
+        <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+        Sample project
+      </div>
+      <video id="hero-video" autoplay muted loop playsinline preload="metadata" poster="/static/video/proof2.jpeg">
         <source src="/static/video/demo.mp4" type="video/mp4">
       </video>
+      <div class="video-fallback-link">
+        Video preview not playing? <a href="/app">Open the interactive sample project in the dashboard &rarr;</a>
+      </div>
     </div>
   </section>
 
-  <!-- PRODUCT DEMO SECTION — the star of the page -->
-  <div class="demo-section" id="demo">
-    <div class="demo-inner">
-      <div class="demo-header">
-        <div>
-          <div class="eyebrow">Watch it work</div>
-          <h2>Four cameras. One synchronized timeline. In under two minutes.</h2>
+  <!-- 3-STEP FLOW (Merged Problem, Outcome & How it works) -->
+  <section class="flow-section" id="how">
+    <div class="flow-header">
+      <div class="eyebrow">
+        <svg class="icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        3-Step Workflow
+      </div>
+      <h2>From unaligned clips to an NLE-ready timeline.</h2>
+      <p>Instead of manually finding transients across separate tracks, SyncCut extracts clean audio signatures, aligns every angle mathematically, and generates an editable sequence.</p>
+    </div>
+
+    <div class="flow-grid">
+      <div class="flow-card">
+        <div class="flow-card-head">
+          <span class="flow-number">01</span>
+          <div class="flow-icon-wrap">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </div>
         </div>
-        <p>No signup, no upload. This is a real project — sync analysis, per-camera confidence scores, camera switch
-          suggestions, and FCPXML export.</p>
+        <h3>Drop in all angles</h3>
+        <p>Drop your reference mic or primary camera alongside all secondary angles into one workspace. SyncCut auto-assigns the reference track while letting you switch it anytime.</p>
+        <div class="flow-detail">Accepts .mp4, .mov, .mkv, .wav, .mp3</div>
       </div>
 
-      <div class="demo-frame">
-        <video controls playsinline preload="metadata" poster="/static/video/proof2.jpg">
+      <div class="flow-card">
+        <div class="flow-card-head">
+          <span class="flow-number">02</span>
+          <div class="flow-icon-wrap">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+        </div>
+        <h3>Audio cross-correlation &amp; drift audit</h3>
+        <p>Cross-correlation calculates the exact sub-millisecond offset for each source. Windowed timing analysis measures clock drift between cameras and flags unreliable audio segments.</p>
+        <div class="flow-detail">Locked / Check manually / Failed rating</div>
+      </div>
 
-          <source src="/static/video/demo.mp4" type="video/mp4">
-          Your browser does not support the video tag.
-        </video>
-        <div class="demo-caption">
-          <div class="demo-caption-item">
-            <b>01 · Sync</b>
-            <span>GCC-PHAT cross-correlation finds the true offset for every camera in seconds.</span>
+      <div class="flow-card">
+        <div class="flow-card-head">
+          <span class="flow-number">03</span>
+          <div class="flow-icon-wrap">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           </div>
-          <div class="demo-caption-item">
-            <b>02 · Score</b>
-            <span>Each source gets a calibrated confidence badge — green, yellow, or red — plus a drift estimate.</span>
+        </div>
+        <h3>Download timeline</h3>
+        <p>Export an aligned multi-track timeline XML or FCPXML. Drag the file directly into Premiere, DaVinci Resolve, or Final Cut Pro to start cutting immediately.</p>
+        <div class="flow-detail">FCPXML &amp; Premiere FCP7 XML supported</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CASE STUDY -->
+  <section class="case-section" id="case">
+    <div class="case-grid">
+      <div>
+        <div class="eyebrow">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Real Session Test
+        </div>
+        <h2 style="font-size:32px; font-weight:700; margin-bottom:14px; letter-spacing:-0.02em;">4-Camera Acoustic Session</h2>
+        <p style="color:var(--ink-dim); font-size:14.5px; line-height:1.6; margin-bottom:20px;">
+          This benchmark was run on real acoustic guitar test footage with four independent cameras recording without common timecode or a clapper slate.
+        </p>
+        <div class="case-card">
+          <div class="case-card-header">
+            <span class="case-card-title">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px;"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+              Measured Offsets (Sample Project)
+            </span>
+            <span class="mono" style="color:var(--ink-faint);">25.000 fps</span>
           </div>
-          <div class="demo-caption-item">
-            <b>03 · Export</b>
-            <span>A real FCPXML rough cut that opens cleanly in Resolve, Premiere, or Final Cut. Audio intact.</span>
-          </div>
+          <table class="case-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>File</th>
+                <th>Offset</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="color:var(--ink);">Reference</td>
+                <td>cam1.mp4</td>
+                <td>+0.000s</td>
+                <td><span class="badge-locked">Locked (ref)</span></td>
+              </tr>
+              <tr>
+                <td style="color:var(--ink);">Camera A</td>
+                <td>cam2.mp4</td>
+                <td>+1.460s</td>
+                <td><span class="badge-locked">Locked (91%)</span></td>
+              </tr>
+              <tr>
+                <td style="color:var(--ink);">Camera B</td>
+                <td>cam3.mp4</td>
+                <td>+3.086s</td>
+                <td><span class="badge-locked" style="color:var(--warn);background:rgba(224,185,62,0.1);">Check (62%)</span></td>
+              </tr>
+              <tr>
+                <td style="color:var(--ink);">Camera C</td>
+                <td>cam4.mp4</td>
+                <td>+0.459s</td>
+                <td><span class="badge-locked" style="color:var(--bad);background:rgba(224,128,111,0.1);">Failed (28%)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div class="case-img-wrap">
+          <img src="/static/testimonials/image.png" alt="SyncCut Results Table" loading="lazy">
+          <div class="case-caption">SyncCut verified alignment output table</div>
         </div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- PROBLEM -->
-  <section id="problem">
-    <div class="split-row">
-      <div>
-        <div class="eyebrow">The Problem</div>
-        <h2>Four cameras.<br>Four timelines.<br><span class="accent">One story.</span></h2>
-        <p>Manual synchronization is the most tedious part of editing. It's slow, error-prone, and kills your creative
-          momentum before you've made a single cut.</p>
+  <!-- PRIVACY AND LIMITS -->
+  <section id="privacy">
+    <div class="eyebrow">
+      <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+      Transparency
+    </div>
+    <h2 style="font-size:32px; font-weight:700; letter-spacing:-0.02em;">Privacy and Processing Limits</h2>
+
+    <div class="privacy-grid">
+      <div class="info-card">
+        <h3>
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          Data Retention &amp; Privacy
+        </h3>
         <ul>
-          <li>No more dragging waveforms to line up transients</li>
-          <li>No more guessing offsets by ear</li>
-          <li>No more spreadsheet math to apply by hand</li>
+          <li>
+            <span class="info-bullet">✓</span>
+            <div><b>Footage retention:</b> Files are uploaded exclusively for audio extraction and correlation. Media files are deleted after your session finishes or the container restarts.</div>
+          </li>
+          <li>
+            <span class="info-bullet">✓</span>
+            <div><b>No cloud training:</b> Uploaded videos and audio tracks are never used to train machine learning models.</div>
+          </li>
+          <li>
+            <span class="info-bullet">✓</span>
+            <div><b>Browser-assisted audio extraction:</b> Supported browsers extract the audio waveform locally to minimize transfer size and speed up processing.</div>
+          </li>
         </ul>
       </div>
-      <div class="visual-block">
-        <div class="visual-row"><span class="dot warn"></span><span class="label">Camera A · offset</span><span
-            class="val">+1.460s</span></div>
-        <div class="visual-row"><span class="dot warn"></span><span class="label">Camera B · offset</span><span
-            class="val">+3.086s</span></div>
-        <div class="visual-row"><span class="dot"></span><span class="label">Camera C · offset</span><span
-            class="val">+0.459s</span></div>
-        <div class="visual-row" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
-          <span class="dot bad"></span><span class="label">Manual alignment time</span><span class="val">~47 min</span>
-        </div>
-      </div>
-    </div>
 
-    <div class="split-row">
-      <div class="video-chip">
-        <video autoplay muted loop playsinline poster="/static/video/poster.jpg">
-          <source src="/static/video/demo.webm" type="video/webm">
-          <source src="/static/video/demo.mp4" type="video/mp4">
-        </video>
-        <div class="chip-label">Output → FCPXML in Resolve</div>
-      </div>
-      <div>
-        <div class="eyebrow">The Outcome</div>
-        <h2>Your footage is already synchronized. <span class="accent">You just haven't aligned it yet.</span></h2>
-        <p>Drop in a reference track and every camera angle. SyncCut finds the true offset for each source and builds a
-          timeline your NLE actually understands — not a spreadsheet of numbers you have to apply manually.</p>
-        <a href="/app" class="btn-big">Try the live demo →</a>
+      <div class="info-card">
+        <h3>
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+          Formats &amp; Hardware Limits
+        </h3>
+        <ul>
+          <li>
+            <span class="info-bullet">✓</span>
+            <div><b>File size limit:</b> Up to 4 GB per media file. For multi-hour 4K files, extracting or uploading the audio track (.wav or .mp3) yields identical sync precision in less time.</div>
+          </li>
+          <li>
+            <span class="info-bullet">✓</span>
+            <div><b>Supported video/audio:</b> .mp4, .mov, .mkv, .wav, .mp3. (Camera-native RAW like .braw or .r3d should have audio exported first).</div>
+          </li>
+          <li>
+            <span class="info-bullet">✓</span>
+            <div><b>Tested NLEs:</b> Exported FCPXML and FCP7 XML sequences are tested with DaVinci Resolve 18+, Adobe Premiere Pro 2023+, and Final Cut Pro 10.6+.</div>
+          </li>
+        </ul>
       </div>
     </div>
   </section>
 
-  <!-- DIFFERENCE -->
-  <section id="difference">
-    <div class="eyebrow">The Difference</div>
-    <h2 style="font-size:34px; font-weight:700; letter-spacing:-0.02em; max-width:640px; line-height:1.15;">What
-      actually changes when you use SyncCut.</h2>
-
-    <div class="compare-stack">
-      <div class="compare-row">
-        <div><span class="compare-label">Before</span><span class="compare-before">An hour of waveform dragging.</span>
-        </div>
-        <div class="compare-arrow">→</div>
-        <div style="text-align:right"><span class="compare-label" style="color:var(--signal)">With SyncCut</span><span
-            class="compare-after">Seconds.</span></div>
-      </div>
-      <div class="compare-row">
-        <div><span class="compare-label">Before</span><span class="compare-before">Four separate timelines to align by
-            hand.</span></div>
-        <div class="compare-arrow">→</div>
-        <div style="text-align:right"><span class="compare-label" style="color:var(--signal)">With SyncCut</span><span
-            class="compare-after">One synchronized timeline.</span></div>
-      </div>
-      <div class="compare-row">
-        <div><span class="compare-label">Before</span><span class="compare-before">Raw camera files and a guess.</span>
-        </div>
-        <div class="compare-arrow">→</div>
-        <div style="text-align:right"><span class="compare-label" style="color:var(--signal)">With SyncCut</span><span
-            class="compare-after">An editable FCPXML rough cut.</span></div>
-      </div>
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="eyebrow">
+      <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      Questions &amp; Answers
     </div>
-  </section>
+    <h2 style="font-size:32px; font-weight:700; letter-spacing:-0.02em;">Frequently Asked Questions</h2>
 
-  <!-- HOW IT WORKS -->
-  <section id="how">
-    <div class="eyebrow">How it Works</div>
-    <h2 style="font-size:34px; font-weight:700; letter-spacing:-0.02em;">From raw footage to rough cut.</h2>
-    <div class="steps">
-      <div class="step-block">
-        <div class="step-index">01</div>
-        <div>
-          <h3>Choose a reference file</h3>
-          <p>Pick your cleanest audio source — usually a boom or lav mic. Every camera gets aligned to it.</p>
+    <div class="faq-list">
+      <div class="faq-item">
+        <div class="faq-question">
+          Where does my footage go?
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
+        <div class="faq-answer">
+          Footage is sent directly to the SyncCut processing host over HTTPS. Audio is extracted into temporary working directories to calculate cross-correlation offsets. Temporary files are wiped after the session closes.
         </div>
       </div>
-      <div class="step-block">
-        <div class="step-index">02</div>
-        <div>
-          <h3>Add your camera sources</h3>
-          <p>Drop in every angle you shot. SyncCut extracts audio from each and runs cross-correlation against the
-            reference.</p>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          What happens if the sync fails?
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
+        <div class="faq-answer">
+          If two cameras don't share enough audible overlap or one mic suffered heavy clipping/silence, SyncCut flags the track as "Check manually" or "Failed" and displays diagnostic notes (e.g. low energy, high noise floor). It won't pretend it locked when the correlation peak is uncertain.
         </div>
       </div>
-      <div class="step-block">
-        <div class="step-index">03</div>
-        <div>
-          <h3>Review offset &amp; confidence</h3>
-          <p>See the exact offset, drift rate, and a calibrated confidence badge for every camera before anything gets
-            trimmed or cut.</p>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          Which cameras and formats work best?
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
+        <div class="faq-answer">
+          Any camera recording scratch audio (mirrorless, cinema cameras, action cameras, iPhones, zoom recorders). As long as the cameras hear the same acoustic environment, cross-correlation can lock their positions without slate claps or timecode boxes.
         </div>
       </div>
-      <div class="step-block">
-        <div class="step-index">04</div>
-        <div>
-          <h3>Export &amp; edit</h3>
-          <p>Pull a synced multi-track timeline, or let SyncCut suggest camera switches and export a rough cut — ready
-            to open in your NLE.</p>
+
+      <div class="faq-item">
+        <div class="faq-question">
+          What does SyncCut cost later?
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
+        <div class="faq-answer">
+          The public beta is completely free. When we introduce paid tiers for high-volume automated rendering and larger cloud storage allocations, early beta testers will receive grandfathered lifetime access.
         </div>
       </div>
     </div>
   </section>
 
-  <!-- FOUNDER'S NOTE -->
+  <!-- FOUNDER SECTION -->
   <section id="contact">
-    <div class="eyebrow">Why this exists</div>
+    <div class="eyebrow">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+      About the Project
+    </div>
+
     <div class="founder">
-      <div class="founder-avatar">:)</div>
-      <div>
-        <H2>Built for editors who'd rather edit than sync.</H2>
-
-        <p>Syncing multi-camera footage shouldn't be the first hour of every project.</p>
-        <p> I built SyncCut after doing the same tedious job over and over — lining up waveforms, guessing offsets, and
-          fixing drift between cameras and audio. So I built a tool that does it automatically.</p>
-        <p> SyncCut uses audio cross-correlation to find the true offset between sources, measures its confidence, and
-          exports a proper FCPXML that opens directly in your NLE.</p>
-        <p>It handles the boring part. You get back to editing.</p>
-        <br>
-        <p>Now I'm looking for editors to put it through real-world footage — different cameras, different audio setups,
-          messy recordings, and the edge cases I haven't encountered yet.</p>
-
-
-        <p> For more information, please contact us:</p>
-        <H3>Contact :- email: sumitrg0007@gmail.com , phone: +91 8261968994</H3>
-
-        <p>If that sounds like you, <a href="#waitlist">request early access below</a>. I'll reach out personally.</p>
+      <div class="founder-photo">
+        <svg class="icon" style="width:40px;height:40px;" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+      </div>
+      <div class="founder-content">
+        <h3>Sumit Gavali</h3>
+        <div class="founder-cred">Developer &amp; Creator of SyncCut</div>
+        <p>
+          I built SyncCut after spending hours lining up waveforms by hand across multi-camera shoots where cameras lacked timecode sync.
+        </p>
+        <p>
+          <b>Current Beta Status:</b> This is an active beta. Core audio cross-correlation, drift auditing, and multi-track XML/FCPXML timeline exports are working. Automated speech-to-text transcript alignment and direct cloud-drive integrations (Dropbox/Google Drive) are still in development and not yet built.
+        </p>
+        <p>
+          If you have test footage or encounter an edge case where sync struggles, reach out directly:
+        </p>
+        <div class="founder-actions">
+          <a href="https://wa.me/918261968994" target="_blank" rel="noopener" class="btn-contact">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+            WhatsApp (+91 8261968994)
+          </a>
+          <a href="mailto:sumitrg0007@gmail.com" class="btn-contact">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+            Email (sumitrg0007@gmail.com)
+          </a>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- BETA PROGRAM -->
-  <section id="beta">
-    <div class="eyebrow">Design Partner Program</div>
-    <h2 style="font-size:34px; font-weight:700; letter-spacing:-0.02em; max-width:640px; line-height:1.15;">We're
-      limiting access to 20 editors on purpose.</h2>
-    <p style="color:var(--ink-dim); font-size:15px; margin-top:16px; max-width:640px; line-height:1.65;">We're not
-      hiding an unfinished product. We're building it with you. Every beta user gets a direct line to the founder and
-      real influence over the roadmap.</p>
-
-    <div class="beta-grid">
-      <div class="beta-card">
-        <h3>What you get</h3>
-        <ul>
-          <li>Free access for the entire beta period</li>
-          <li>Founding-member pricing locked in at launch</li>
-          <li>A direct Slack / email line to the founder</li>
-          <li>Your requested features prioritized on the roadmap</li>
-          <li>Your name (if you want) in the launch credits</li>
-        </ul>
-      </div>
-      <div class="beta-card">
-        <h3>What we ask</h3>
-        <ul>
-          <li>Run SyncCut on 2–3 real projects within the first month</li>
-          <li>Tell us when it fails, not just when it works</li>
-          <li>15-minute feedback call after your first project</li>
-          <li>Permission to use your anonymized results as proof</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- WAITLIST -->
+  <!-- ON-PAGE WAITLIST / SIGNUP -->
   <div class="waitlist" id="waitlist">
-    <div class="waitlist-inner">
-      <div class="eyebrow" style="text-align:center;">Request Early Access</div>
-      <h2>Join the beta.</h2>
-      <p class="sub">Tell us a bit about your workflow. We'll personally reach out within 48 hours to see if you're a
-        fit for the current beta cohort.</p>
+    <div class="eyebrow" style="margin-bottom:8px;">Early Access</div>
+    <h2>Join the SyncCut Beta</h2>
+    <p class="sub">Tell us your typical setup. We will send you updates and invite you to test new build releases.</p>
 
-      <a href="https://forms.gle/mPiSVSZUtnXpSZdHA" target="_blank" class="btn-solid"
-        style="display:block; text-align:center; padding: 16px; font-size:16px; border-radius:4px; margin-top:24px;">
-        Request Early Access →
-      </a>
+    <form id="waitlist-form">
+      <div class="form-group">
+        <label for="waitlist-email">Email address</label>
+        <input type="email" id="waitlist-email" name="email" placeholder="editor@studio.com" required>
+      </div>
 
-      <div class="fineprint">No newsletter. No drip campaign. One personal email from the founder, then a call if we're
-        a fit.</div>
-    </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="waitlist-nle">Primary NLE</label>
+          <select id="waitlist-nle" name="nle" required>
+            <option value="DaVinci Resolve">DaVinci Resolve</option>
+            <option value="Adobe Premiere Pro">Adobe Premiere Pro</option>
+            <option value="Final Cut Pro">Final Cut Pro</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="waitlist-cameras">Typical camera count</label>
+          <select id="waitlist-cameras" name="cameras" required>
+            <option value="2-3 cameras">2–3 cameras</option>
+            <option value="4-6 cameras">4–6 cameras</option>
+            <option value="7+ cameras">7+ cameras</option>
+          </select>
+        </div>
+      </div>
+
+      <button type="submit" id="waitlist-submit" class="btn-solid" style="padding:14px;justify-content:center;font-size:14px;margin-top:8px;">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+        Sign up for beta access
+      </button>
+    </form>
   </div>
 
+  <!-- FOOTER -->
   <footer>
-    <span class="mono">SyncCut — offline multi-camera sync, with confidence scoring.
+    SyncCut &middot; Footage is uploaded for processing and deleted after your session.
   </footer>
 
   <script>
-    const form = document.getElementById('waitlist-form');
+    // FAQ accordion toggle
+    document.querySelectorAll('.faq-question').forEach(q => {
+      q.addEventListener('click', () => {
+        const item = q.parentElement;
+        const ans = item.querySelector('.faq-answer');
+        if (ans) {
+          const isShown = ans.style.display !== 'none';
+          ans.style.display = isShown ? 'none' : 'block';
+        }
+      });
+    });
+
+    // Waitlist Form Handler
+    const waitlistForm = document.getElementById('waitlist-form');
     const submitBtn = document.getElementById('waitlist-submit');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = Object.fromEntries(new FormData(form).entries());
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Submitting…';
-      try {
-        const res = await fetch('/api/waitlist', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
-        if (!res.ok) throw new Error('Request failed');
-        form.outerHTML = `
-        <div class="form-success">
-          <b>You're on the list.</b><br><br>
-          I'm building SyncCut to solve the tedious part of multi-cam editing, and I read every one of these myself. I'll reach out personally within 48 hours to learn more about your workflow and see if we're a fit for the current beta cohort.<br><br>
-          — Founder, SyncCut
-        </div>`;
-      } catch (err) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Request Early Access';
-        alert('Something went wrong. Email hello@synccut.app directly and I\'ll add you manually.');
-      }
-    });
+    if (waitlistForm) {
+      waitlistForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(waitlistForm).entries());
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = 'Submitting…';
+
+        try {
+          const res = await fetch('/api/waitlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+          if (!res.ok) throw new Error('Request failed');
+          waitlistForm.outerHTML = `
+            <div class="form-success">
+              <b>You're on the beta list.</b><br><br>
+              Thank you for signing up. We'll send early build announcements and testing notes directly to <b>${data.email || 'your email'}</b>.<br><br>
+              — Sumit Gavali, SyncCut
+            </div>`;
+        } catch (err) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Sign up for beta access';
+          alert('Could not submit form automatically. Please email sumitrg0007@gmail.com directly.');
+        }
+      });
+    }
   </script>
 
 </body>

@@ -1,3 +1,13 @@
+---
+title: SyncCut
+emoji: 🎬
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # SyncCut — Web App
 
 This connects your existing, unmodified core logic to a real product website.

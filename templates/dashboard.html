@@ -4,16 +4,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SyncCut — Sync your cameras in seconds</title>
+  <title>SyncCut — Multi-Camera Audio Sync Dashboard</title>
   <meta name="description"
-    content="Upload your footage, get perfectly synced cameras, and download a ready-to-edit timeline for Final Cut Pro, DaVinci Resolve, or Premiere.">
+    content="Upload multi-camera footage, calculate exact audio offsets, and export synchronized sequences for Final Cut Pro, DaVinci Resolve, or Premiere.">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
     :root {
       --bg: #08100d;
       --panel: #101f19;
-      --panel-hover: #132118;
+      --panel-hover: #13241d;
       --line: #1c3229;
       --line-soft: #16241d;
       --ink: #eef4f0;
@@ -27,8 +27,8 @@
       --warn: #e0b93e;
       --warn-bg: rgba(224, 185, 62, .1);
       --radius: 8px;
-      --radius-sm: 5px;
-      --transition: .18s ease;
+      --radius-sm: 4px;
+      --transition: .15s ease;
     }
 
     * {
@@ -47,11 +47,29 @@
       font-family: 'Space Grotesk', sans-serif;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      padding-bottom: 60px;
     }
 
     a {
       color: inherit;
       text-decoration: none;
+    }
+
+    .mono {
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .icon {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
     }
 
     ::-webkit-scrollbar {
@@ -77,7 +95,7 @@
       border-bottom: 1px solid var(--line-soft);
       position: sticky;
       top: 0;
-      background: rgba(8, 16, 13, .92);
+      background: rgba(8, 16, 13, .94);
       backdrop-filter: blur(12px);
       z-index: 50;
     }
@@ -106,17 +124,9 @@
       border-radius: 2px;
     }
 
-    .brand-mark span:nth-child(1) {
-      height: 7px;
-    }
-
-    .brand-mark span:nth-child(2) {
-      height: 18px;
-    }
-
-    .brand-mark span:nth-child(3) {
-      height: 12px;
-    }
+    .brand-mark span:nth-child(1) { height: 7px; }
+    .brand-mark span:nth-child(2) { height: 18px; }
+    .brand-mark span:nth-child(3) { height: 12px; }
 
     .beta-chip {
       font-family: 'IBM Plex Mono', monospace;
@@ -124,8 +134,8 @@
       letter-spacing: .08em;
       background: var(--signal-bg);
       color: var(--signal);
-      padding: 3px 7px;
-      border-radius: 20px;
+      padding: 2px 7px;
+      border-radius: 12px;
       text-transform: uppercase;
     }
 
@@ -142,9 +152,10 @@
       background: var(--warn-bg);
       border: 1px solid rgba(224, 185, 62, .25);
       padding: 4px 10px;
-      border-radius: 20px;
+      border-radius: 16px;
       align-items: center;
       gap: 5px;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
     .demo-flag.show {
@@ -173,6 +184,9 @@
     nav a.back {
       font-size: 13px;
       color: var(--ink-dim);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       transition: color var(--transition);
     }
 
@@ -180,80 +194,53 @@
       color: var(--ink);
     }
 
-    /* LAYOUT */
+    /* MAIN CONTAINER */
     main {
       max-width: 860px;
       margin: 0 auto;
-      padding: 40px 24px 120px;
+      padding: 32px 20px 80px;
     }
 
     /* ONBOARDING */
     .hero-headline {
-      font-size: clamp(22px, 4vw, 30px);
+      font-size: 26px;
       font-weight: 700;
       letter-spacing: -.02em;
-      line-height: 1.2;
-      margin-bottom: 8px;
+      line-height: 1.25;
+      margin-bottom: 6px;
     }
 
     .hero-sub {
       color: var(--ink-dim);
-      font-size: 15px;
-      margin-bottom: 32px;
-      max-width: 520px;
+      font-size: 14.5px;
+      margin-bottom: 24px;
+      max-width: 640px;
+      line-height: 1.55;
     }
 
+    /* 3 STEPS SHOWN EXACTLY ONCE */
     .steps-explainer {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin-bottom: 28px;
+      gap: 12px;
+      margin-bottom: 24px;
     }
 
     .step-card {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 18px 16px;
+      padding: 16px 14px;
       position: relative;
-      overflow: hidden;
     }
 
-    .step-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, var(--signal-dim), transparent);
-      opacity: 0;
-      transition: opacity var(--transition);
-    }
-
-    .step-card:hover::before {
-      opacity: 1;
-    }
-
-    .step-icon {
-      width: 36px;
-      height: 36px;
-      background: var(--signal-bg);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 12px;
-      font-size: 18px;
-    }
-
-    .step-number {
+    .step-card-num {
       font-family: 'IBM Plex Mono', monospace;
       font-size: 10px;
       color: var(--signal);
       letter-spacing: .08em;
       text-transform: uppercase;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .step-card h3 {
@@ -263,83 +250,36 @@
     }
 
     .step-card p {
-      font-size: 12.5px;
-      color: var(--ink-dim);
-      line-height: 1.5;
-    }
-
-    .path-chooser {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 32px;
-    }
-
-    .path-card {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 20px 20px 18px;
-      cursor: pointer;
-      transition: border-color var(--transition), background var(--transition), transform var(--transition);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .path-card:hover {
-      border-color: var(--signal-dim);
-      background: var(--panel-hover);
-      transform: translateY(-1px);
-    }
-
-    .path-card.primary {
-      border-color: var(--signal-dim);
-      background: rgba(31, 122, 82, .12);
-    }
-
-    .path-card.primary:hover {
-      border-color: var(--signal);
-      background: rgba(31, 122, 82, .18);
-    }
-
-    .path-label {
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .path-desc {
       font-size: 12px;
       color: var(--ink-dim);
+      line-height: 1.45;
     }
 
-    .path-cta {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--signal);
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      margin-top: 4px;
-    }
-
-    .path-cta-secondary {
-      font-size: 13px;
-      font-weight: 600;
+    /* SESSIONS NOTICE CALLOUT */
+    .session-notice {
+      background: rgba(16, 31, 25, 0.7);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      margin-bottom: 20px;
+      font-size: 12.5px;
       color: var(--ink-dim);
       display: flex;
       align-items: center;
-      gap: 5px;
-      margin-top: 4px;
+      gap: 10px;
+    }
+
+    .session-notice b {
+      color: var(--warn);
     }
 
     /* BANNERS */
     .banner {
       display: none;
       border-radius: var(--radius-sm);
-      padding: 14px 18px;
+      padding: 14px 16px;
       margin-bottom: 20px;
-      font-size: 14px;
+      font-size: 13.5px;
       line-height: 1.5;
     }
 
@@ -349,54 +289,30 @@
       gap: 12px;
     }
 
-    .banner-icon {
-      flex-shrink: 0;
-      font-size: 16px;
-      margin-top: 1px;
-    }
-
-    .banner-body {
-      flex: 1;
+    .banner.error {
+      background: var(--bad-bg);
+      border: 1px solid rgba(224, 128, 111, .35);
     }
 
     .banner-title {
       font-weight: 600;
       margin-bottom: 3px;
+      color: var(--bad);
     }
 
     .banner-msg {
-      color: var(--ink-dim);
+      color: var(--ink);
       font-size: 13px;
     }
 
     .banner-action {
       display: inline-block;
       margin-top: 8px;
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
       color: var(--signal);
       cursor: pointer;
       text-decoration: underline;
-    }
-
-    .banner.error {
-      background: var(--bad-bg);
-      border: 1px solid rgba(224, 128, 111, .3);
-    }
-
-    .banner.warn {
-      background: var(--warn-bg);
-      border: 1px solid rgba(224, 185, 62, .3);
-    }
-
-    .banner.success {
-      background: var(--signal-bg);
-      border: 1px solid rgba(62, 224, 140, .3);
-    }
-
-    .banner.info {
-      background: var(--panel);
-      border: 1px solid var(--line);
     }
 
     /* PANELS */
@@ -412,226 +328,200 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 16px 20px;
+      padding: 14px 18px;
       border-bottom: 1px solid var(--line);
-    }
-
-    .panel-head-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .panel-step {
-      background: var(--signal-bg);
-      color: var(--signal);
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 10px;
-      font-weight: 500;
-      letter-spacing: .06em;
-      padding: 3px 8px;
-      border-radius: 20px;
-      text-transform: uppercase;
     }
 
     .panel-title {
       font-size: 14px;
       font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .panel-body {
-      padding: 20px;
+      padding: 18px;
     }
 
-    /* UPLOAD ROWS */
-    .upload-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 14px;
-      padding: 16px 0;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .upload-row:last-of-type {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-
-    .upload-row:first-of-type {
-      padding-top: 0;
-    }
-
-    .upload-col {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .upload-label {
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 3px;
-    }
-
-    .upload-hint {
-      font-size: 12px;
-      color: var(--ink-dim);
-      margin-bottom: 10px;
-    }
-
-    .upload-trigger {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .file-btn {
+    /* UNIFIED DROP ZONE */
+    .drop-zone {
+      border: 2px dashed var(--line);
       background: #0a1712;
-      border: 1px solid var(--line);
-      color: var(--ink);
-      padding: 9px 16px;
-      border-radius: var(--radius-sm);
-      font-size: 13px;
-      font-weight: 500;
+      border-radius: var(--radius);
+      padding: 28px 20px;
+      text-align: center;
       cursor: pointer;
-      font-family: 'Space Grotesk', sans-serif;
       transition: border-color var(--transition), background var(--transition);
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      white-space: nowrap;
-      min-height: 44px;
+      position: relative;
     }
 
-    .file-btn:hover:not(:disabled) {
+    .drop-zone:hover,
+    .drop-zone.dragover {
       border-color: var(--signal-dim);
       background: #0d1e16;
     }
 
-    .file-btn:active:not(:disabled) {
-      transform: scale(.98);
+    .drop-zone-icon {
+      margin-bottom: 8px;
+      color: var(--signal);
     }
 
-    .file-btn:disabled {
-      opacity: .4;
-      cursor: default;
+    .drop-zone-title {
+      font-size: 14.5px;
+      font-weight: 600;
+      margin-bottom: 4px;
     }
 
-    input[type=file] {
-      display: none;
+    .drop-zone-desc {
+      font-size: 12.5px;
+      color: var(--ink-dim);
     }
 
-    .file-status {
+    /* FILE LIST */
+    .file-list {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
       font-size: 13px;
-      color: var(--ink-faint);
-      flex: 1;
-      min-width: 0;
+    }
+
+    .file-item-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .file-item-name {
+      font-weight: 500;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .file-status.loaded {
+    .file-item-size {
+      font-size: 11px;
+      color: var(--ink-faint);
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .ref-tag {
+      background: var(--signal-bg);
+      color: var(--signal);
+      border: 1px solid rgba(62, 224, 140, 0.25);
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .file-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .btn-make-ref {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink-dim);
+      padding: 4px 9px;
+      border-radius: 3px;
+      font-size: 11.5px;
+      cursor: pointer;
+      transition: border-color var(--transition), color var(--transition);
+      font-family: inherit;
+    }
+
+    .btn-make-ref:hover {
+      border-color: var(--signal-dim);
       color: var(--signal);
     }
 
-    /* ADVANCED SETTINGS */
-    .advanced-toggle {
+    .btn-remove-file {
+      background: transparent;
+      border: none;
+      color: var(--ink-faint);
+      padding: 4px 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .btn-remove-file:hover {
+      color: var(--bad);
+    }
+
+    /* COLLAPSIBLE DEVELOPER OPTIONS */
+    .dev-toggle {
       font-size: 12px;
       color: var(--ink-faint);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      padding: 8px 0;
-      transition: color var(--transition);
+      gap: 6px;
+      padding: 10px 0 4px;
       user-select: none;
+      transition: color var(--transition);
     }
 
-    .advanced-toggle:hover {
+    .dev-toggle:hover {
       color: var(--ink-dim);
     }
 
-    .advanced-caret {
-      display: inline-block;
-      transition: transform var(--transition);
-    }
-
-    .advanced-caret.open {
-      transform: rotate(90deg);
-    }
-
-    .advanced-panel {
+    .dev-panel {
       display: none;
-      background: rgba(0, 0, 0, .2);
+      background: rgba(0, 0, 0, .25);
       border: 1px solid var(--line-soft);
       border-radius: var(--radius-sm);
-      padding: 16px;
+      padding: 14px;
       margin-top: 8px;
     }
 
-    .advanced-panel.open {
+    .dev-panel.open {
       display: block;
     }
 
-    .adv-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 20px;
-      align-items: center;
-      margin-bottom: 12px;
+    .dev-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
     }
 
-    .adv-row:last-child {
-      margin-bottom: 0;
-    }
-
-    .adv-group {
+    .dev-field {
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 4px;
     }
 
-    .adv-label {
-      font-size: 11px;
+    .dev-field label {
+      font-size: 11.5px;
       color: var(--ink-faint);
-      font-weight: 500;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
-    .adv-group select {
+    .dev-field select {
       background: #0a1712;
       border: 1px solid var(--line);
       color: var(--ink);
-      padding: 7px 10px;
+      padding: 6px 10px;
       border-radius: var(--radius-sm);
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 13px;
-      cursor: pointer;
-    }
-
-    .toggle-label {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      cursor: pointer;
-    }
-
-    .toggle-label input[type=checkbox] {
-      accent-color: var(--signal);
-      width: 15px;
-      height: 15px;
-      margin-top: 2px;
-      flex-shrink: 0;
-    }
-
-    .toggle-text {
-      font-size: 13px;
-    }
-
-    .toggle-sub {
-      font-size: 11px;
-      color: var(--ink-faint);
-      margin-top: 2px;
+      font-size: 12.5px;
+      font-family: inherit;
     }
 
     /* RUN ROW */
@@ -639,17 +529,16 @@
       display: flex;
       align-items: center;
       gap: 14px;
-      margin-top: 20px;
+      margin-top: 18px;
       flex-wrap: wrap;
     }
 
-    /* BUTTONS */
     .btn-primary {
       background: var(--signal);
       color: #06150e;
       font-weight: 700;
       font-size: 14px;
-      padding: 12px 24px;
+      padding: 12px 22px;
       border: none;
       border-radius: var(--radius-sm);
       cursor: pointer;
@@ -657,18 +546,13 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
       min-height: 44px;
-      letter-spacing: -.01em;
+      transition: background var(--transition), box-shadow var(--transition);
     }
 
     .btn-primary:hover:not(:disabled) {
       background: #5eea9f;
-      box-shadow: 0 4px 20px rgba(62, 224, 140, .25);
-    }
-
-    .btn-primary:active:not(:disabled) {
-      transform: scale(.98);
+      box-shadow: 0 4px 18px rgba(62, 224, 140, .2);
     }
 
     .btn-primary:disabled {
@@ -683,25 +567,20 @@
       color: var(--ink-dim);
       font-size: 13px;
       font-weight: 500;
-      padding: 10px 18px;
+      padding: 9px 16px;
       border-radius: var(--radius-sm);
       cursor: pointer;
       font-family: inherit;
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      transition: border-color var(--transition), color var(--transition), background var(--transition);
       min-height: 40px;
+      transition: border-color var(--transition), color var(--transition);
     }
 
     .btn-secondary:hover:not(:disabled) {
       border-color: var(--signal-dim);
       color: var(--ink);
-      background: rgba(62, 224, 140, .04);
-    }
-
-    .btn-secondary:active:not(:disabled) {
-      transform: scale(.98);
     }
 
     .btn-secondary:disabled {
@@ -714,31 +593,39 @@
       border: none;
       color: var(--ink-faint);
       font-size: 13px;
-      padding: 8px 12px;
+      padding: 6px 10px;
       border-radius: var(--radius-sm);
       cursor: pointer;
       font-family: inherit;
-      transition: color var(--transition);
     }
 
     .btn-ghost:hover {
       color: var(--ink-dim);
     }
 
-    /* PROGRESS */
-    .progress-wrap {
+    /* REAL STAGE PROGRESS */
+    .progress-box {
       display: none;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
       flex: 1;
+      min-width: 200px;
     }
 
-    .progress-wrap.show {
+    .progress-box.show {
       display: flex;
     }
 
+    .progress-stages {
+      font-size: 11.5px;
+      color: var(--ink-dim);
+      font-family: 'IBM Plex Mono', monospace;
+      display: flex;
+      justify-content: space-between;
+    }
+
     .progress-track {
-      height: 3px;
+      height: 4px;
       background: var(--line);
       border-radius: 2px;
       overflow: hidden;
@@ -748,8 +635,8 @@
       height: 100%;
       background: var(--signal);
       border-radius: 2px;
-      width: 0%;
-      transition: width .4s ease;
+      width: 25%;
+      transition: width .3s ease;
     }
 
     .progress-fill.indeterminate {
@@ -758,83 +645,26 @@
     }
 
     @keyframes progressSlide {
-      0% {
-        transform: translateX(-200%);
-      }
-
-      100% {
-        transform: translateX(400%);
-      }
+      0% { transform: translateX(-200%); }
+      100% { transform: translateX(400%); }
     }
 
-    .progress-msg {
-      font-size: 12px;
-      color: var(--ink-dim);
-    }
-
-    /* SPINNER */
-    .spinner {
-      width: 14px;
-      height: 14px;
-      border: 2px solid rgba(255, 255, 255, .15);
-      border-top-color: currentColor;
-      border-radius: 50%;
-      animation: spin .6s linear infinite;
-      display: none;
-      flex-shrink: 0;
-    }
-
-    .spinner.show {
-      display: inline-block;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    /* RESULTS */
+    /* RESULTS TABLE */
     .results-empty {
-      padding: 40px 20px;
+      padding: 36px 20px;
       text-align: center;
-    }
-
-    .results-empty-icon {
-      font-size: 32px;
-      margin-bottom: 12px;
-      opacity: .5;
+      color: var(--ink-faint);
     }
 
     .results-empty-title {
-      font-size: 15px;
+      font-size: 14.5px;
       font-weight: 600;
-      margin-bottom: 6px;
       color: var(--ink-dim);
+      margin-bottom: 4px;
     }
 
     .results-empty-sub {
-      font-size: 13px;
-      color: var(--ink-faint);
-      max-width: 340px;
-      margin: 0 auto;
-    }
-
-    .results-success-bar {
-      display: none;
-      background: var(--signal-bg);
-      border: 1px solid rgba(62, 224, 140, .25);
-      border-radius: var(--radius-sm);
-      padding: 14px 18px;
-      margin: 20px 20px 0;
-      font-size: 13px;
-      color: var(--signal);
-      align-items: center;
-      gap: 10px;
-    }
-
-    .results-success-bar.show {
-      display: flex;
+      font-size: 12.5px;
     }
 
     table {
@@ -845,17 +675,18 @@
 
     th {
       text-align: left;
-      font-size: 11px;
+      font-size: 10.5px;
       color: var(--ink-faint);
       font-weight: 600;
       padding: 10px 12px;
       border-bottom: 1px solid var(--line);
-      letter-spacing: .02em;
+      letter-spacing: .04em;
       text-transform: uppercase;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
     td {
-      padding: 13px 12px;
+      padding: 12px;
       border-bottom: 1px solid var(--line-soft);
       vertical-align: middle;
     }
@@ -864,17 +695,9 @@
       border-bottom: none;
     }
 
-    tr.row-good td:first-child {
-      box-shadow: inset 3px 0 0 var(--signal);
-    }
-
-    tr.row-warn td:first-child {
-      box-shadow: inset 3px 0 0 var(--warn);
-    }
-
-    tr.row-bad td:first-child {
-      box-shadow: inset 3px 0 0 var(--bad);
-    }
+    tr.row-good td:first-child { box-shadow: inset 3px 0 0 var(--signal); }
+    tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+    tr.row-bad td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 
     .source-name {
       font-weight: 600;
@@ -891,6 +714,7 @@
     .offset-val {
       font-weight: 600;
       font-size: 13px;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
     .offset-explain {
@@ -899,79 +723,43 @@
       margin-top: 2px;
     }
 
-    .drift-val {
-      font-size: 13px;
-    }
-
-    .drift-verdict {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 1px 6px;
+    .band-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
       border-radius: 3px;
-      margin-left: 4px;
-      vertical-align: middle;
+      font-size: 11.5px;
+      font-weight: 600;
     }
 
-    .drift-verdict.ok {
+    .band-locked {
       background: var(--signal-bg);
       color: var(--signal);
     }
 
-    .drift-verdict.warn {
+    .band-check {
       background: var(--warn-bg);
       color: var(--warn);
     }
 
-    .drift-verdict.bad {
+    .band-failed {
       background: var(--bad-bg);
       color: var(--bad);
     }
 
-    .drift-ci {
-      font-size: 10px;
+    .numeric-sec {
+      font-size: 11px;
       color: var(--ink-faint);
+      font-family: 'IBM Plex Mono', monospace;
       margin-top: 2px;
-      display: block;
-    }
-
-    .match-pct {
-      font-weight: 700;
-      font-size: 14px;
-    }
-
-    .match-label {
-      font-size: 11px;
-      margin-top: 1px;
-    }
-
-    .match-label.good {
-      color: var(--signal);
-    }
-
-    .match-label.warn {
-      color: var(--warn);
-    }
-
-    .match-label.bad {
-      color: var(--bad);
-    }
-
-    .flag-tag {
-      display: inline-block;
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 3px;
-      background: var(--bad-bg);
-      color: var(--bad);
-      margin: 2px 2px;
     }
 
     /* EXPORT SECTION */
     .export-section {
       display: none;
       border-top: 1px solid var(--line);
-      padding: 18px 20px;
+      padding: 18px;
       flex-direction: column;
       gap: 14px;
     }
@@ -980,139 +768,121 @@
       display: flex;
     }
 
-    .export-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--ink-faint);
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      margin-bottom: 2px;
-    }
-
-    .export-actions {
+    .export-row-top {
       display: flex;
+      align-items: center;
+      justify-content: space-between;
       flex-wrap: wrap;
       gap: 10px;
-      align-items: center;
     }
 
-    .fps-field {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .fps-field label {
+    .export-warning-callout {
       font-size: 12px;
-      color: var(--ink-faint);
-      white-space: nowrap;
-    }
-
-    .fps-field input {
-      width: 64px;
-      background: #0a1712;
-      border: 1px solid var(--line);
-      color: var(--ink);
-      padding: 8px 10px;
-      border-radius: var(--radius-sm);
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 13px;
-    }
-
-    .divider-dot {
-      color: var(--ink-faint);
-      font-size: 12px;
-    }
-
-    .export-tip {
-      font-size: 11px;
-      color: var(--ink-faint);
-      margin-top: 2px;
-    }
-
-    /* REVIEW CALLOUT */
-    #review-callout {
-      display: none;
+      color: var(--warn);
       background: var(--warn-bg);
-      border: 1px solid rgba(224, 185, 62, .3);
+      border: 1px solid rgba(224, 185, 62, .25);
+      padding: 8px 12px;
       border-radius: var(--radius-sm);
-      padding: 14px 18px;
-      margin-bottom: 20px;
-    }
-
-    #review-callout.show {
-      display: block;
-    }
-
-    .review-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--warn);
-      margin-bottom: 6px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .review-body {
-      font-size: 13px;
-      color: var(--ink-dim);
-      line-height: 1.55;
-      margin-bottom: 10px;
-    }
-
-    .review-list {
-      list-style: none;
-      padding: 0;
-    }
-
-    .review-list li {
+    .fps-display {
       font-size: 12px;
-      color: var(--warn);
-      padding: 2px 0;
+      color: var(--ink-dim);
+      font-family: 'IBM Plex Mono', monospace;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .fps-display a {
+      color: var(--signal);
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .export-buttons-group {
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: 10px;
+      flex-wrap: wrap;
+      position: relative;
     }
 
-    .review-list li::before {
-      content: "·";
-      font-size: 18px;
-      line-height: 1;
+    /* MORE EXPORTS DROPDOWN MENU */
+    .more-exports-wrap {
+      position: relative;
+      display: inline-block;
     }
 
-    /* SWITCHES PANEL */
+    .more-exports-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      background: #101f19;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 6px;
+      min-width: 220px;
+      z-index: 100;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .more-exports-menu.show {
+      display: flex;
+    }
+
+    .menu-item-btn {
+      background: transparent;
+      border: none;
+      color: var(--ink);
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 12.5px;
+      border-radius: 3px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: inherit;
+    }
+
+    .menu-item-btn:hover {
+      background: rgba(62, 224, 140, 0.08);
+      color: var(--signal);
+    }
+
+    /* SUGGESTED EDIT PANEL */
     .switch-header-row {
       display: grid;
-      grid-template-columns: 180px 1fr 100px;
-      padding: 8px 20px;
+      grid-template-columns: 140px 1fr 100px;
+      padding: 8px 18px;
       border-bottom: 1px solid var(--line);
-    }
-
-    .switch-col-head {
       font-size: 10.5px;
       color: var(--ink-faint);
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: .05em;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
     .switch-list {
-      max-height: 380px;
+      max-height: 320px;
       overflow-y: auto;
     }
 
     .switch-item {
       display: grid;
-      grid-template-columns: 180px 1fr 100px;
-      padding: 11px 20px;
+      grid-template-columns: 140px 1fr 100px;
+      padding: 10px 18px;
       border-bottom: 1px solid var(--line-soft);
       align-items: center;
-      transition: background var(--transition);
-    }
-
-    .switch-item:hover {
-      background: rgba(255, 255, 255, .02);
+      font-size: 12.5px;
     }
 
     .switch-item:last-child {
@@ -1120,39 +890,28 @@
     }
 
     .switch-time {
-      font-size: 12.5px;
       color: var(--ink-dim);
       font-family: 'IBM Plex Mono', monospace;
     }
 
     .switch-cam {
-      font-size: 13px;
       font-weight: 600;
     }
 
     .switch-dur {
-      font-size: 12px;
       color: var(--ink-faint);
-    }
-
-    .switch-export-row {
-      padding: 16px 20px;
-      border-top: 1px solid var(--line);
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-wrap: wrap;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
     .switch-note {
       font-size: 12px;
-      color: var(--ink-faint);
-      padding: 12px 20px;
+      color: var(--ink-dim);
+      padding: 12px 18px;
       border-top: 1px solid var(--line-soft);
       line-height: 1.5;
     }
 
-    /* TOOLTIP */
+    /* FIXED TOOLTIP STYLES: No uppercase, z-index 200, safe offset */
     [data-tip] {
       position: relative;
       cursor: help;
@@ -1161,24 +920,27 @@
     [data-tip]::after {
       content: attr(data-tip);
       position: absolute;
-      bottom: calc(100% + 6px);
+      bottom: calc(100% + 8px);
       left: 50%;
       transform: translateX(-50%);
-      background: #1a2f24;
+      background: #142720;
       border: 1px solid var(--line);
-      color: var(--ink-dim);
+      color: var(--ink);
       font-size: 11.5px;
       font-family: 'Space Grotesk', sans-serif;
+      text-transform: none; /* HARD RULE: No uppercase tooltips */
+      letter-spacing: normal;
       padding: 6px 10px;
       border-radius: 4px;
       pointer-events: none;
       opacity: 0;
       transition: opacity .15s;
-      z-index: 99;
+      z-index: 200; /* HARD RULE: Z-index fixed so it never obscures buttons */
       white-space: normal;
-      text-align: center;
+      text-align: left;
       max-width: 240px;
       width: max-content;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
     }
 
     [data-tip]:hover::after {
@@ -1192,19 +954,19 @@
       right: 20px;
       background: var(--panel);
       border: 1px solid var(--line);
-      padding: 13px 18px;
+      padding: 12px 18px;
       border-radius: var(--radius);
       font-size: 13px;
-      max-width: 340px;
+      max-width: 360px;
       transform: translateY(12px);
       opacity: 0;
       transition: all .2s ease;
       pointer-events: none;
-      z-index: 200;
+      z-index: 300;
       display: flex;
       align-items: center;
       gap: 10px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, .4);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
     }
 
     .toast.show {
@@ -1212,103 +974,23 @@
       opacity: 1;
     }
 
-    .toast.error {
-      border-color: var(--bad);
-    }
+    .toast.error { border-color: var(--bad); }
+    .toast.ok { border-color: var(--signal-dim); }
+    .toast.warn { border-color: rgba(224, 185, 62, .5); }
 
-    .toast.ok {
-      border-color: var(--signal-dim);
-    }
-
-    .toast.warn {
-      border-color: rgba(224, 185, 62, .5);
-    }
-
-    /* SUPPORT FOOTER */
-    .support-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: rgba(8, 16, 13, .92);
-      backdrop-filter: blur(8px);
-      border-top: 1px solid var(--line-soft);
-      padding: 10px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--ink-faint);
-      z-index: 40;
-    }
-
-    .support-bar a {
-      color: var(--signal);
-      font-weight: 600;
-      transition: color var(--transition);
-    }
-
-    .support-bar a:hover {
-      color: #5eea9f;
-    }
-
-    /* RESPONSIVE */
+    /* RESPONSIVE DESIGN - Tested for 390px (Mobile WhatsApp opens) */
     @media (max-width: 680px) {
-      nav {
-        padding: 12px 16px;
-      }
-
-      main {
-        padding: 24px 16px 100px;
-      }
-
-      .steps-explainer {
-        grid-template-columns: 1fr;
-        gap: 10px;
-      }
-
-      .path-chooser {
-        grid-template-columns: 1fr;
-      }
-
-      .upload-row {
-        flex-direction: column;
-      }
-
-      .run-row {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .btn-primary {
-        width: 100%;
-        justify-content: center;
-      }
-
-      .switch-header-row,
-      .switch-item {
-        grid-template-columns: 1fr 1fr;
-      }
-
-      .switch-dur {
-        display: none;
-      }
-
-      .export-actions {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .export-actions .btn-secondary,
-      .export-actions .btn-primary {
-        width: 100%;
-        justify-content: center;
-      }
-
-      .divider-dot {
-        display: none;
-      }
+      nav { padding: 12px 16px; }
+      main { padding: 18px 12px 60px; }
+      .steps-explainer { grid-template-columns: 1fr; gap: 8px; }
+      .run-row { flex-direction: column; align-items: stretch; }
+      .btn-primary, .btn-secondary, .more-exports-wrap { width: 100%; }
+      .btn-primary { justify-content: center; }
+      .btn-secondary { justify-content: center; }
+      .switch-header-row, .switch-item { grid-template-columns: 110px 1fr; }
+      .switch-dur { display: none; }
+      .dev-grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
     }
   </style>
 </head>
@@ -1323,143 +1005,101 @@
     </div>
     <div class="nav-right">
       <span class="demo-flag" id="demo-flag">&#10022; Sample project</span>
-      <span class="nav-dot" id="backend-dot" title="Service status"></span>
-      <a href="/" class="back">&#8592; Home</a>
+      <span class="nav-dot" id="backend-dot" title="Server status"></span>
+      <a href="/" class="back">
+        <svg class="icon" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Home
+      </a>
     </div>
   </nav>
 
   <main>
 
-    <!-- ONBOARDING -->
-    <section id="onboarding-section" style="margin-bottom:36px;">
-      <h1 class="hero-headline">Sync your cameras in seconds</h1>
-      <p class="hero-sub">Upload your footage, get perfectly aligned cameras, and download a ready-to-edit timeline — no
-        clapper, no manual drift hunting.</p>
+    <!-- ONBOARDING: STEPS SHOWN ONCE -->
+    <section id="onboarding-section">
+      <h1 class="hero-headline">Multi-camera audio synchronization</h1>
+      <p class="hero-sub">Drop in your multi-cam footage or microphones. SyncCut detects waveforms, measures clock drift, and prepares an aligned sequence for your editor.</p>
 
       <div class="steps-explainer">
         <div class="step-card">
-          <div class="step-icon">&#127897;</div>
-          <div class="step-number">Step 1</div>
-          <h3>Upload your reference audio</h3>
-          <p>Your best audio — a lav mic, mix-minus, or main camera with the clearest sound.</p>
+          <div class="step-card-num">Step 1</div>
+          <h3>Add your files</h3>
+          <p>Drop your reference audio track and camera angles into the workspace below.</p>
         </div>
         <div class="step-card">
-          <div class="step-icon">&#127909;</div>
-          <div class="step-number">Step 2</div>
-          <h3>Add your camera angles</h3>
-          <p>Upload as many cameras as you have. SyncCut finds each one's exact start time automatically.</p>
+          <div class="step-card-num">Step 2</div>
+          <h3>Verify offsets</h3>
+          <p>Check alignment bands (Locked, Check manually, or Failed) and drift estimates.</p>
         </div>
         <div class="step-card">
-          <div class="step-icon">&#9986;&#65039;</div>
-          <div class="step-number">Step 3</div>
-          <h3>Download your synced timeline</h3>
-          <p>Open the exported file in Final Cut Pro, DaVinci Resolve, or Premiere. Edit from frame one.</p>
+          <div class="step-card-num">Step 3</div>
+          <h3>Download timeline</h3>
+          <p>Export an FCPXML or Premiere XML and drag it straight into your NLE.</p>
         </div>
       </div>
 
-      <div class="path-chooser">
-        <div class="path-card primary" id="try-own-card">
-          <div class="path-label">Upload your own footage</div>
-          <div class="path-desc">Works with .mp4, .mov, .mkv, .wav &mdash; up to 4 GB per file. Processing usually takes
-            under a minute.</div>
-          <div class="path-cta">Start uploading &#8595;</div>
-        </div>
-        <div class="path-card" id="try-demo-card">
-          <div class="path-label">Try with sample footage first</div>
-          <div class="path-desc">See exactly what SyncCut produces &mdash; real offset numbers, match scores, and a
-            downloadable timeline &mdash; before uploading anything.</div>
-          <div class="path-cta-secondary">Load sample project &#8594;</div>
-        </div>
+      <div class="session-notice">
+        <svg class="icon" viewBox="0 0 24 24" style="color:var(--warn);"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span><b>Notice:</b> Results are not saved on the server. Download your files before closing this tab.</span>
       </div>
     </section>
 
-    <!-- REVIEW CALLOUT -->
-    <div id="review-callout">
-      <div class="review-title">&#9888; One or more cameras may need a manual check</div>
-      <p class="review-body">SyncCut wasn't confident about the sync on the cameras listed below &mdash; maybe they had
-        very quiet audio, or not much overlap with your reference track. Open those clips in your editor and check the
-        alignment visually before you cut.</p>
-      <ul class="review-list" id="review-list"></ul>
-    </div>
-
-    <!-- ERROR BANNER -->
+    <!-- ERROR BANNER (Never show raw stack traces) -->
     <div class="banner error" id="error-banner">
-      <div class="banner-icon">&#9888;</div>
-      <div class="banner-body">
-        <div class="banner-title" id="error-title">Something went wrong</div>
+      <svg class="icon" viewBox="0 0 24 24" style="color:var(--bad);margin-top:2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <div>
+        <div class="banner-title" id="error-title">Unable to process footage</div>
         <div class="banner-msg" id="error-msg"></div>
         <span class="banner-action" id="error-action" style="display:none"></span>
       </div>
     </div>
 
-    <!-- SUCCESS BAR -->
-    <div class="results-success-bar" id="success-bar">
-      <span>&#10003;</span>
-      <span id="success-msg">Sync complete &mdash; all cameras aligned.</span>
-    </div>
-
-    <!-- PANEL 1: UPLOAD & SYNC -->
+    <!-- MAIN WORKSPACE PANEL -->
     <div class="panel" id="upload-panel">
       <div class="panel-head">
-        <div class="panel-head-left">
-          <span class="panel-step">Step 1</span>
-          <span class="panel-title">Upload your footage</span>
-        </div>
-        <button class="btn-ghost" id="reset-btn" style="display:none">&#8634; Start over</button>
+        <span class="panel-title">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          Footage &amp; Audio Workspace
+        </span>
+        <button class="btn-ghost" id="reset-btn" style="display:none">&#8634; Reset files</button>
       </div>
       <div class="panel-body">
 
-        <!-- Reference file -->
-        <div class="upload-row">
-          <div class="upload-col">
-            <div class="upload-label">Your reference audio</div>
-            <div class="upload-hint">Best audio source &mdash; lav mic, mix-minus, or clearest camera. Accepts .mp4,
-              .mov, .mkv, .wav, .mp3 &middot; Max 4 GB</div>
-            <div class="upload-trigger">
-              <button class="file-btn" id="ref-btn">&#128206; Choose reference file</button>
-              <div class="file-status" id="ref-status">No file selected</div>
-            </div>
-            <input type="file" id="ref-input" accept=".mp4,.mov,.mkv,.wav,.mp3">
+        <!-- ONE UNIFIED DROP ZONE -->
+        <div class="drop-zone" id="unified-dropzone">
+          <input type="file" id="unified-file-input" accept=".mp4,.mov,.mkv,.wav,.mp3" multiple style="display:none;">
+          <div class="drop-zone-icon">
+            <svg class="icon" style="width:32px;height:32px;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
           </div>
+          <div class="drop-zone-title">Drop your footage or audio files here</div>
+          <div class="drop-zone-desc">or click to browse files &middot; Accepts .mp4, .mov, .mkv, .wav, .mp3 (up to 4 GB each)</div>
         </div>
 
-        <!-- Camera files -->
-        <div class="upload-row">
-          <div class="upload-col">
-            <div class="upload-label">Your camera angles</div>
-            <div class="upload-hint">Add as many cameras as you have &mdash; they'll all be aligned to your reference.
-              Same formats, up to 4 GB each.</div>
-            <div class="upload-trigger">
-              <button class="file-btn" id="inputs-btn">&#127909; Add camera files</button>
-              <div class="file-status" id="inputs-status">No cameras added yet</div>
-            </div>
-            <input type="file" id="inputs-input" accept=".mp4,.mov,.mkv,.wav,.mp3" multiple>
-          </div>
+        <div style="margin-top:10px;text-align:right;">
+          <button type="button" class="btn-ghost" id="load-sample-btn" style="font-size:12px;color:var(--signal);cursor:pointer;">
+            &rarr; Or load the 4-camera sample project
+          </button>
         </div>
 
-        <!-- Advanced settings -->
-        <div style="padding-top:12px;">
-          <span class="advanced-toggle" id="advanced-toggle">
-            <span class="advanced-caret" id="advanced-caret">&#9658;</span>
-            Advanced settings
+        <!-- FILE LIST WITH REFERENCE SELECTION -->
+        <div class="file-list" id="file-list" style="display:none;"></div>
+
+        <!-- COLLAPSED DEVELOPER OPTIONS -->
+        <div style="margin-top:12px;">
+          <span class="dev-toggle" id="dev-toggle">
+            <span id="dev-caret">&#9658;</span> Developer options (defaults applied automatically)
           </span>
-          <div class="advanced-panel" id="advanced-panel">
-            <div class="adv-row">
-              <div class="adv-group">
-                <div class="adv-label"
-                  data-tip="Global: aligns all cameras to each other simultaneously (most accurate). Reference only: aligns each camera directly to your reference file.">
-                  Sync method &#9432;
-                </div>
+          <div class="dev-panel" id="dev-panel">
+            <div class="dev-grid">
+              <div class="dev-field">
+                <label for="sync-mode-select">Sync Solver Method</label>
                 <select id="sync-mode-select">
-                  <option value="global">Global &mdash; most accurate (recommended)</option>
-                  <option value="reference">Reference only &mdash; faster</option>
+                  <option value="global" selected>Global Multi-source (Recommended)</option>
+                  <option value="reference">Reference only</option>
                 </select>
               </div>
-              <div class="adv-group">
-                <div class="adv-label"
-                  data-tip="How often SyncCut checks for gradual timing drift. 30s works for most recordings. Use 15s for very long sessions.">
-                  Drift check interval &#9432;
-                </div>
+              <div class="dev-field">
+                <label for="drift-window-select">Drift Check Window</label>
                 <select id="drift-window-select">
                   <option value="30" selected>Every 30 seconds</option>
                   <option value="15">Every 15 seconds</option>
@@ -1467,178 +1107,161 @@
                 </select>
               </div>
             </div>
-            <div class="adv-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="turbo-mode-chk" checked>
-                <div>
-                  <div class="toggle-text">⚡ High-Speed Engine (Multi-core & Cached)</div>
-                  <div class="toggle-sub">Extracts audio tracks concurrently across all CPU threads with instant disk cache. Up to 4-5x faster on large multi-camera projects.</div>
-                </div>
-              </label>
-            </div>
-            <div class="adv-row">
-              <label class="toggle-label">
-                <input type="checkbox" id="drift-correct-chk">
-                <div>
-                  <div class="toggle-text">Fix gradual timing drift automatically</div>
-                  <div class="toggle-sub">Recommended for recordings over 1 hour. Resamples audio to compensate for
-                    clock drift between cameras.</div>
-                </div>
-              </label>
-            </div>
           </div>
         </div>
 
-        <!-- Run -->
+        <!-- RUN ACTION & REAL STAGES PROGRESS -->
         <div class="run-row">
           <button class="btn-primary" id="run-btn" disabled>
-            <span class="spinner" id="run-spinner"></span>
-            <span id="run-btn-text">Sync my footage &#8594;</span>
+            <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span id="run-btn-text">Sync footage</span>
           </button>
-          <div class="progress-wrap" id="progress-wrap">
-            <div class="progress-track">
-              <div class="progress-fill indeterminate" id="progress-fill"></div>
+
+          <div class="progress-box" id="progress-box">
+            <div class="progress-stages">
+              <span id="stage-name">Uploading…</span>
+              <span id="elapsed-time">0s elapsed</span>
             </div>
-            <div class="progress-msg" id="progress-msg"></div>
+            <div class="progress-track">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
           </div>
         </div>
 
       </div><!-- /panel-body -->
 
-      <!-- Results area -->
+      <!-- RESULTS EMPTY STATE -->
       <div class="results-empty" id="report-empty">
-        <div class="results-empty-icon">&#127907;</div>
-        <div class="results-empty-title">Your sync results will appear here</div>
-        <div class="results-empty-sub">Upload your footage above and click &ldquo;Sync my footage&rdquo; &mdash; usually
-          takes under a minute.</div>
+        <div class="results-empty-title">No sync analysis yet</div>
+        <div class="results-empty-sub">Add files or click "load the 4-camera sample project" to see results.</div>
       </div>
 
+      <!-- RESULTS TABLE -->
       <table id="report-table" style="display:none;">
         <thead>
           <tr>
             <th>Camera</th>
-            <th data-tip="How many seconds this camera needs to be shifted to line up with your reference.">Time offset
-              &#9432;</th>
-            <th
-              data-tip="Gradual clock drift per hour. Under 10 ms/hr is safe to ignore. Over 50 ms/hr means you should enable drift correction.">
-              Timing drift &#9432;</th>
-            <th
-              data-tip="How confident SyncCut is in the sync. Above 80% = great. 50–80% = double-check. Below 50% = review manually.">
-              Match quality &#9432;</th>
-            <th>Notes</th>
+            <th data-tip="Time offset relative to the reference track.">Time offset</th>
+            <th data-tip="Estimated timing drift across the duration.">Drift rate</th>
+            <th data-tip="Match confidence grouped by band: Locked, Check manually, or Failed.">Match quality</th>
+            <th>Diagnostic notes</th>
           </tr>
         </thead>
         <tbody id="report-body"></tbody>
       </table>
 
-      <!-- Export section -->
+      <!-- EXPORT SECTION -->
       <div class="export-section" id="export-section">
-        <div>
-          <div class="export-title">Download your results</div>
-          <div class="export-tip">Drag the FCPXML into your NLE to import the synced multicam sequence instantly.</div>
-        </div>
-        <div class="export-actions">
-          <div class="fps-field">
-            <label data-tip="Match this to your project settings. Common values: 23.976, 24, 25, 29.97, 30, 60">Frame
-              rate &#9432;</label>
-            <input type="number" id="fps-input" value="25" step="0.001">
+        <div class="export-row-top">
+          <div class="fps-display">
+            <span>Project frame rate: <b id="fps-display-val">25 fps</b></span>
+            <a id="change-fps-link">Change</a>
+            <input type="number" id="fps-input" value="25" step="0.001" style="display:none;width:60px;background:#0a1712;color:#fff;border:1px solid var(--line);padding:2px 6px;border-radius:3px;">
           </div>
-          <span class="divider-dot">&middot;</span>
-          <button class="btn-primary" id="export-timeline-btn" disabled>&#8595; Download timeline (FCPXML)</button>
-          <button class="btn-primary" id="export-xmeml-btn" disabled style="background: linear-gradient(135deg, #6c5ce7, #4834d4); border-color: #6c5ce7;">&#8595; Premiere Pro (XML)</button>
-          <button class="btn-secondary" id="switch-btn" disabled>&#9986; Get suggested edit</button>
-          <button class="btn-secondary" id="save-csv-btn" disabled>&#8595; Export to spreadsheet</button>
-          <button class="btn-ghost" id="save-report-btn" disabled>Save raw data</button>
+          <div class="export-warning-callout">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>Results are not saved. Download files before closing.</span>
+          </div>
+        </div>
+
+        <div class="export-buttons-group">
+          <!-- Primary Action: Download timeline -->
+          <button class="btn-primary" id="export-timeline-btn" disabled>
+            <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download timeline (FCPXML)
+          </button>
+
+          <!-- More Exports Dropdown -->
+          <div class="more-exports-wrap">
+            <button class="btn-secondary" id="more-exports-btn">
+              More exports
+              <svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="more-exports-menu" id="more-exports-menu">
+              <button class="menu-item-btn" id="export-xmeml-btn">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Premiere Pro (XML / FCP7)
+              </button>
+              <button class="menu-item-btn" id="save-csv-btn">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                Export CSV report
+              </button>
+              <button class="menu-item-btn" id="save-report-btn">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Save raw JSON data
+              </button>
+            </div>
+          </div>
+
+          <!-- Suggested Edit Action -->
+          <button class="btn-secondary" id="switch-btn" disabled>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg>
+            Suggested edit
+          </button>
         </div>
       </div>
-
     </div><!-- /panel -->
 
     <!-- PANEL 2: SUGGESTED EDIT -->
     <div class="panel" id="switches-panel" style="display:none;">
       <div class="panel-head">
-        <div class="panel-head-left">
-          <span class="panel-step">Step 2</span>
-          <span class="panel-title">Suggested edit</span>
-        </div>
-        <div class="spinner" id="switch-spinner" style="width:12px;height:12px;color:var(--signal);"></div>
+        <span class="panel-title">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line></svg>
+          Suggested Edit Sequence
+        </span>
+        <div id="switch-spinner" style="display:none;color:var(--signal);font-size:12px;" class="mono">Calculating…</div>
       </div>
       <div class="switch-header-row">
-        <div class="switch-col-head">Time</div>
-        <div class="switch-col-head">Best camera</div>
-        <div class="switch-col-head">Duration</div>
+        <div>Time Range</div>
+        <div>Active Angle</div>
+        <div>Duration</div>
       </div>
       <div class="switch-list" id="switch-list"></div>
-      <div class="switch-export-row">
-        <button class="btn-primary" id="export-switch-btn">&#8595; Download suggested edit (FCPXML)</button>
-        <div class="fps-field">
-          <label>Frame rate</label>
-          <input type="number" id="fps-input-switch" value="25" step="0.001">
-        </div>
+      <div style="padding:14px 18px;border-top:1px solid var(--line);display:flex;align-items:center;gap:12px;">
+        <button class="btn-primary" id="export-switch-btn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Download rough cut (FCPXML)
+        </button>
       </div>
       <div class="switch-note">
-        &#128161; This is SyncCut's best guess at who's speaking when &mdash; based on audio energy levels in each
-        camera. Review it in your editor and trim to taste before the final cut.
-        <span style="color:var(--ink-faint);font-size:11px;">(Uses voice activity detection)</span>
+        <b>Suggested-edit:</b> Cameras ranked by audio strength at each moment. A starting point, not a finished edit. Review in your NLE and adjust cuts to taste.
       </div>
     </div>
 
   </main>
 
   <div class="toast" id="toast">
-    <span id="toast-icon"></span>
     <span id="toast-msg"></span>
   </div>
 
   <script>
-    const API = "";   // same-origin: Flask serves this page at /app
+    const API = "";
     let sessionId = null;
-    let refFile = null;
-    let inputFiles = [];
+    let selectedFiles = []; // array of { file, isRef }
     let isDemo = false;
+    let elapsedTimer = null;
+    let startTime = 0;
 
-    // ─── CLIENT-SIDE AUDIO EXTRACTION (Web Audio API) ──────────────────────────
-    // Extracts mono 16kHz WAV directly in the user's browser in seconds.
-    // Drops upload size from ~500 MB to ~5 MB (98%+ faster, zero server OOM).
-
+    // ─── AUDIO EXTRACTION HELPER ──────────────────────────────────────────────
     function encodeWAV(samples, sampleRate) {
       const buffer = new ArrayBuffer(44 + samples.length * 2);
       const view = new DataView(buffer);
-
       function writeString(offset, string) {
-        for (let i = 0; i < string.length; i++) {
-          view.setUint8(offset + i, string.charCodeAt(i));
-        }
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
       }
-
-      /* RIFF identifier */
       writeString(0, 'RIFF');
-      /* file length */
       view.setUint32(4, 36 + samples.length * 2, true);
-      /* RIFF type */
       writeString(8, 'WAVE');
-      /* format chunk identifier */
       writeString(12, 'fmt ');
-      /* format chunk length */
       view.setUint32(16, 16, true);
-      /* sample format (raw PCM) */
       view.setUint16(20, 1, true);
-      /* channel count (mono) */
       view.setUint16(22, 1, true);
-      /* sample rate */
       view.setUint32(24, sampleRate, true);
-      /* byte rate (sample rate * block align) */
       view.setUint32(28, sampleRate * 2, true);
-      /* block align (channel count * bytes per sample) */
       view.setUint16(32, 2, true);
-      /* bits per sample */
       view.setUint16(34, 16, true);
-      /* data chunk identifier */
       writeString(36, 'data');
-      /* data chunk length */
       view.setUint32(40, samples.length * 2, true);
-
-      // Write PCM 16-bit samples with clipping protection
       let offset = 44;
       for (let i = 0; i < samples.length; i++) {
         let s = Math.max(-1, Math.min(1, samples[i]));
@@ -1648,34 +1271,19 @@
       return new Blob([view], { type: 'audio/wav' });
     }
 
-    async function extractAudioTrackClient(file, progressCb) {
-      if (!window.AudioContext && !window.webkitAudioContext) {
-        // Fallback to sending original file if browser doesn't support Web Audio
-        return file;
-      }
-
+    async function extractAudioTrackClient(file) {
+      if (!window.AudioContext && !window.webkitAudioContext) return file;
       try {
-        if (progressCb) progressCb(`Reading ${file.name}...`);
         const arrayBuffer = await file.arrayBuffer();
-
-        if (progressCb) progressCb(`Decoding audio from ${file.name}...`);
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-        if (progressCb) progressCb(`Extracting 16kHz audio: ${file.name}...`);
-        // Downmix to mono 16kHz
         const numChannels = decodedBuffer.numberOfChannels;
         const length = decodedBuffer.length;
         const monoSamples = new Float32Array(length);
-
         for (let c = 0; c < numChannels; c++) {
           const channelData = decodedBuffer.getChannelData(c);
-          for (let i = 0; i < length; i++) {
-            monoSamples[i] += channelData[i] / numChannels;
-          }
+          for (let i = 0; i < length; i++) monoSamples[i] += channelData[i] / numChannels;
         }
-
-        // Resample to 16000 if decodedBuffer sampleRate was different
         let finalSamples = monoSamples;
         const targetSR = 16000;
         if (decodedBuffer.sampleRate !== targetSR) {
@@ -1690,30 +1298,22 @@
             finalSamples[i] = monoSamples[indexFloor] * (1 - frac) + monoSamples[indexCeil] * frac;
           }
         }
-
         const wavBlob = encodeWAV(finalSamples, targetSR);
         const wavName = file.name.replace(/\.[^/.]+$/, "") + ".wav";
-        const wavFile = new File([wavBlob], wavName, { type: "audio/wav" });
-        return wavFile;
+        return new File([wavBlob], wavName, { type: "audio/wav" });
       } catch (err) {
-        console.warn(`Browser Web Audio decode skipped for ${file.name}:`, err);
-        // Fallback gracefully to original file
         return file;
       }
     }
 
-    // ─── HELPERS ──────────────────────────────────────────────────────────────
+    // ─── NOTIFICATIONS & ERRORS ───────────────────────────────────────────────
     function toast(msg, type) {
       const t = document.getElementById('toast');
-      const icons = { ok: '✓', error: '⚠', warn: '!' };
-      document.getElementById('toast-icon').textContent = icons[type] || '';
       document.getElementById('toast-msg').textContent = msg;
       t.className = 'toast show ' + (type || '');
       clearTimeout(t._timer);
-      t._timer = setTimeout(() => t.className = 'toast', 4200);
+      t._timer = setTimeout(() => t.className = 'toast', 4000);
     }
-
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     function showError(title, msg, actionText, actionFn) {
       const b = document.getElementById('error-banner');
@@ -1734,41 +1334,49 @@
       document.getElementById('error-banner').classList.remove('show');
     }
 
-    function friendlyError(rawMsg) {
-      if (/unsupported|format|codec|could not decode/i.test(rawMsg))
-        return { title: "File format not supported", msg: "Try exporting your footage as .mp4 or .mov and upload again. If you're using a camera-native format like .mxf or .r3d, convert it first.", action: null };
-      if (/too large|content length|413/i.test(rawMsg))
-        return { title: "File is too large", msg: "SyncCut supports files up to 4 GB each. Try compressing the video, or use just the audio track (.wav).", action: null };
-      if (/session|session_id/i.test(rawMsg))
-        return { title: "Session expired", msg: "The connection was reset. Refresh the page to start a new session — your files will need to be re-uploaded.", action: "Refresh page", fn: () => location.reload() };
-      if (/fetch|failed to fetch|network|offline/i.test(rawMsg))
-        return { title: "Can't reach the server", msg: "Check your internet connection and try again. If you're running SyncCut locally, make sure python app.py is running on port 5000.", action: "Try again", fn: () => checkBackend() };
-      if (/no.*audio|silent|empty/i.test(rawMsg))
-        return { title: "No audio found", msg: "One of your files appears to have no audio track. Make sure your video has audio, or use a separate audio file.", action: null };
-      return { title: "Something went wrong", msg: rawMsg, action: null };
+    function plainEnglishError(rawMsg) {
+      if (/format|codec|decode/i.test(rawMsg)) {
+        return {
+          title: "File format not recognized",
+          msg: "Please upload standard .mp4, .mov, or .wav files. If you are using RAW cinema footage, export the audio track first."
+        };
+      }
+      if (/too large|413/i.test(rawMsg)) {
+        return {
+          title: "File exceeds 4 GB limit",
+          msg: "The file is larger than the 4 GB limit. Extract the audio track (.wav or .mp3) and upload that instead for faster sync."
+        };
+      }
+      if (/connection|fetch|offline|network/i.test(rawMsg)) {
+        return {
+          title: "Connection issue",
+          msg: "Could not communicate with the sync service. Check your internet connection and try again.",
+          action: "Retry",
+          fn: () => checkBackend()
+        };
+      }
+      return {
+        title: "Could not sync footage",
+        msg: "The audio tracks could not be synchronized. Verify that the files have audible sound recorded in the same room."
+      };
     }
 
-    // ─── BACKEND HEALTH CHECK ─────────────────────────────────────────────────
+    // ─── BACKEND STATUS ───────────────────────────────────────────────────────
     async function checkBackend() {
       const dot = document.getElementById('backend-dot');
-      dot.className = 'nav-dot';
       try {
         const res = await fetch(API + '/api/session', { method: 'POST' });
-        if (!res.ok) throw new Error('non-200');
+        if (!res.ok) throw new Error('status error');
         const data = await res.json();
         sessionId = data.session_id;
         dot.className = 'nav-dot online';
-        dot.title = 'Service is online';
+        dot.title = 'Sync service is online';
         hideError();
         updateRunButton();
       } catch (e) {
         dot.className = 'nav-dot offline';
-        dot.title = 'Service offline';
-        showError(
-          "Can't reach the server",
-          "Make sure python app.py is running, then visit this page at http://localhost:5000/app — not as a local file.",
-          "Retry connection", checkBackend
-        );
+        dot.title = 'Sync service offline';
+        showError("Service unavailable", "Cannot connect to the sync server. Please ensure the backend is running.", "Retry", checkBackend);
       }
     }
     checkBackend();
@@ -1776,499 +1384,505 @@
     async function ensureSession() {
       if (sessionId) return sessionId;
       const res = await fetch(API + '/api/session', { method: 'POST' });
-      if (!res.ok) throw new Error("Connection failed. Is the server running?");
-      const data = await res.json();
-      sessionId = data.session_id;
+      if (!res.ok) throw new Error("Could not start session");
+      const d = await res.json();
+      sessionId = d.session_id;
       return sessionId;
     }
 
-    // ─── DEMO DATA ─────────────────────────────────────────────────────────────
-    const DEMO_RESULTS = [
-      { source: "Reference", file: "cam1.mp4", offset_sec: 0.000, drift_ms_per_hour: 0.0, drift_ci_lower: 0, drift_ci_upper: 0, confidence: 1.000, badge: "green", status: "Good (reference)", robustness_flags: [] },
-      { source: "Camera A", file: "cam2.mp4", offset_sec: 1.460, drift_ms_per_hour: -2.1, drift_ci_lower: -5.2, drift_ci_upper: 1.0, confidence: 0.91, badge: "green", status: "Good", robustness_flags: [] },
-      { source: "Camera B", file: "cam3.mp4", offset_sec: 3.086, drift_ms_per_hour: -0.8, drift_ci_lower: -3.1, drift_ci_upper: 1.5, confidence: 0.62, badge: "yellow", status: "Low confidence", robustness_flags: [] },
-      { source: "Camera C", file: "cam4.mp4", offset_sec: 0.459, drift_ms_per_hour: 121.4, drift_ci_lower: 85.2, drift_ci_upper: 157.6, confidence: 0.28, badge: "red", status: "Review required", robustness_flags: ["LOW_ENERGY_SILENCE"] },
-    ];
+    // ─── UNIFIED DROP ZONE HANDLING ───────────────────────────────────────────
+    const dropZone = document.getElementById('unified-dropzone');
+    const fileInput = document.getElementById('unified-file-input');
 
-    const DEMO_SWITCHES = [
-      { start_sec: 0.0, end_sec: 4.0, camera: "Camera A", avg_score: 22.1 },
-      { start_sec: 4.0, end_sec: 9.5, camera: "Camera B", avg_score: 18.7 },
-      { start_sec: 9.5, end_sec: 24.0, camera: "Camera A", avg_score: 25.3 },
-      { start_sec: 24.0, end_sec: 27.5, camera: "Reference", avg_score: 24.1 },
-      { start_sec: 27.5, end_sec: 59.5, camera: "Camera B", avg_score: 23.8 },
-      { start_sec: 59.5, end_sec: 82.5, camera: "Camera A", avg_score: 21.2 },
-      { start_sec: 82.5, end_sec: 98.5, camera: "Camera A", avg_score: 24.5 },
-      { start_sec: 98.5, end_sec: 113.5, camera: "Camera B", avg_score: 23.9 },
-    ];
+    dropZone.onclick = () => fileInput.click();
+
+    dropZone.ondragover = e => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    };
+    dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+    dropZone.ondrop = e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        addFiles(Array.from(e.dataTransfer.files));
+      }
+    };
+
+    fileInput.onchange = e => {
+      if (e.target.files && e.target.files.length) {
+        addFiles(Array.from(e.target.files));
+      }
+    };
+
+    function addFiles(newFiles) {
+      if (isDemo) resetState();
+      for (const f of newFiles) {
+        if (!selectedFiles.some(item => item.file.name === f.name && item.file.size === f.size)) {
+          selectedFiles.push({ file: f, isRef: false });
+        }
+      }
+      // Auto-select reference (first file if none is ref)
+      if (selectedFiles.length > 0 && !selectedFiles.some(f => f.isRef)) {
+        selectedFiles[0].isRef = true;
+      }
+      renderFileList();
+      updateRunButton();
+      detectFrameRateFromFile(selectedFiles[0].file);
+    }
+
+    function renderFileList() {
+      const listEl = document.getElementById('file-list');
+      if (selectedFiles.length === 0) {
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+        return;
+      }
+      listEl.style.display = 'flex';
+      listEl.innerHTML = '';
+
+      selectedFiles.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'file-item';
+        const mb = (item.file.size / (1024 * 1024)).toFixed(1);
+
+        div.innerHTML = `
+          <div class="file-item-left">
+            <svg class="icon" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+            <span class="file-item-name">${item.file.name}</span>
+            <span class="file-item-size">(${mb} MB)</span>
+            ${item.isRef ? '<span class="ref-tag">Reference track</span>' : ''}
+          </div>
+          <div class="file-item-actions">
+            ${!item.isRef ? `<button type="button" class="btn-make-ref" onclick="setReferenceIndex(${idx})">Use this as reference</button>` : ''}
+            <button type="button" class="btn-remove-file" title="Remove file" onclick="removeFileIndex(${idx})">&times;</button>
+          </div>
+        `;
+        listEl.appendChild(div);
+      });
+      document.getElementById('reset-btn').style.display = 'inline-block';
+    }
+
+    window.setReferenceIndex = function(idx) {
+      selectedFiles.forEach((f, i) => f.isRef = (i === idx));
+      renderFileList();
+      updateRunButton();
+    };
+
+    window.removeFileIndex = function(idx) {
+      selectedFiles.splice(idx, 1);
+      if (selectedFiles.length > 0 && !selectedFiles.some(f => f.isRef)) {
+        selectedFiles[0].isRef = true;
+      }
+      renderFileList();
+      updateRunButton();
+    };
+
+    function detectFrameRateFromFile(file) {
+      // Auto-detect common frame rates; fallback to 25 if not detected
+      const name = file ? file.name.toLowerCase() : '';
+      let fps = 25;
+      if (name.includes('23.976') || name.includes('23976')) fps = 23.976;
+      else if (name.includes('24fps') || name.includes('24_')) fps = 24;
+      else if (name.includes('29.97') || name.includes('2997')) fps = 29.97;
+      else if (name.includes('30fps') || name.includes('30_')) fps = 30;
+      else if (name.includes('50fps')) fps = 50;
+      else if (name.includes('59.94')) fps = 59.94;
+      else if (name.includes('60fps')) fps = 60;
+
+      document.getElementById('fps-input').value = fps;
+      document.getElementById('fps-display-val').textContent = fps + ' fps';
+    }
+
+    // Frame rate change toggle
+    document.getElementById('change-fps-link').onclick = () => {
+      const input = document.getElementById('fps-input');
+      const disp = document.getElementById('fps-display-val');
+      const link = document.getElementById('change-fps-link');
+      if (input.style.display === 'none') {
+        input.style.display = 'inline-block';
+        disp.style.display = 'none';
+        link.textContent = 'Save';
+      } else {
+        input.style.display = 'none';
+        disp.style.display = 'inline-block';
+        disp.textContent = input.value + ' fps';
+        link.textContent = 'Change';
+      }
+    };
+
+    // ─── DEVELOPER OPTIONS TOGGLE ─────────────────────────────────────────────
+    document.getElementById('dev-toggle').onclick = () => {
+      const panel = document.getElementById('dev-panel');
+      const caret = document.getElementById('dev-caret');
+      const open = panel.classList.toggle('open');
+      caret.textContent = open ? '▼' : '►';
+    };
+
+    // ─── MORE EXPORTS MENU ────────────────────────────────────────────────────
+    const moreBtn = document.getElementById('more-exports-btn');
+    const moreMenu = document.getElementById('more-exports-menu');
+    moreBtn.onclick = (e) => {
+      e.stopPropagation();
+      moreMenu.classList.toggle('show');
+    };
+    document.addEventListener('click', () => moreMenu.classList.remove('show'));
 
     // ─── RUN BUTTON STATE ─────────────────────────────────────────────────────
     function updateRunButton() {
-      const ready = (refFile || isDemo) && (inputFiles.length > 0 || isDemo) && sessionId;
+      const refCount = selectedFiles.filter(f => f.isRef).length;
+      const inputCount = selectedFiles.filter(f => !f.isRef).length;
+      const ready = (isDemo) || (refCount === 1 && inputCount >= 1 && sessionId);
       document.getElementById('run-btn').disabled = !ready;
     }
 
-    // ─── ADVANCED TOGGLE ──────────────────────────────────────────────────────
-    document.getElementById('advanced-toggle').onclick = () => {
-      const panel = document.getElementById('advanced-panel');
-      const caret = document.getElementById('advanced-caret');
-      const open = panel.classList.toggle('open');
-      caret.classList.toggle('open', open);
-    };
+    // ─── SAMPLE DATA ──────────────────────────────────────────────────────────
+    const SAMPLE_RESULTS = [
+      { source: "Reference", file: "cam1.mp4", offset_sec: 0.000, drift_ms_per_hour: 0.0, confidence: 1.000, badge: "green", status: "Good (reference)", robustness_flags: [], total_windows: 10, reliable_windows: "10/10" },
+      { source: "Camera A", file: "cam2.mp4", offset_sec: 1.460, drift_ms_per_hour: -2.1, confidence: 0.910, badge: "green", status: "Good", robustness_flags: [], total_windows: 10, reliable_windows: "9/10" },
+      { source: "Camera B", file: "cam3.mp4", offset_sec: 3.086, drift_ms_per_hour: -0.8, confidence: 0.620, badge: "yellow", status: "Low confidence", robustness_flags: [], total_windows: 6, reliable_windows: "4/6" },
+      { source: "Camera C", file: "cam4.mp4", offset_sec: 0.459, drift_ms_per_hour: 0.0, confidence: 0.280, badge: "red", status: "Review required", robustness_flags: ["SHORT_CLIP"], total_windows: 1, reliable_windows: "1/1" }
+    ];
 
-    // ─── PATH CHOOSER ─────────────────────────────────────────────────────────
-    document.getElementById('try-own-card').onclick = () => {
-      document.getElementById('upload-panel').scrollIntoView({ behavior: 'smooth' });
-    };
-    document.getElementById('try-demo-card').onclick = () => { loadDemo(); };
+    const SAMPLE_SWITCHES = [
+      { start_sec: 0.0, end_sec: 4.0, camera: "Camera A" },
+      { start_sec: 4.0, end_sec: 9.5, camera: "Camera B" },
+      { start_sec: 9.5, end_sec: 24.0, camera: "Camera A" },
+      { start_sec: 24.0, end_sec: 27.5, camera: "Reference" },
+      { start_sec: 27.5, end_sec: 59.5, camera: "Camera B" },
+      { start_sec: 59.5, end_sec: 82.5, camera: "Camera A" }
+    ];
 
-    // ─── FILE PICKERS ─────────────────────────────────────────────────────────
-    document.getElementById('ref-btn').onclick = () => document.getElementById('ref-input').click();
-    document.getElementById('ref-input').onchange = e => {
-      refFile = e.target.files[0];
-      const el = document.getElementById('ref-status');
-      el.textContent = refFile ? '✓ ' + refFile.name : 'No file selected';
-      el.classList.toggle('loaded', !!refFile);
-      updateRunButton();
-    };
+    document.getElementById('load-sample-btn').onclick = () => loadSampleProject();
 
-    document.getElementById('inputs-btn').onclick = () => document.getElementById('inputs-input').click();
-    document.getElementById('inputs-input').onchange = e => {
-      inputFiles = inputFiles.concat(Array.from(e.target.files));
-      const el = document.getElementById('inputs-status');
-      el.textContent = inputFiles.length === 1
-        ? '✓ ' + inputFiles[0].name
-        : '✓ ' + inputFiles.length + ' cameras added';
-      el.classList.toggle('loaded', inputFiles.length > 0);
-      updateRunButton();
-    };
-
-    // ─── DEMO LOADER ──────────────────────────────────────────────────────────
-    function loadDemo() {
+    function loadSampleProject() {
+      resetState();
       isDemo = true;
       document.getElementById('demo-flag').classList.add('show');
-      document.getElementById('reset-btn').style.display = 'inline-flex';
-      document.getElementById('ref-btn').disabled = true;
-      document.getElementById('inputs-btn').disabled = true;
-      document.getElementById('ref-status').textContent = '✓ cam1.mp4 (sample)';
-      document.getElementById('ref-status').classList.add('loaded');
-      document.getElementById('inputs-status').textContent = '✓ 3 cameras: cam2.mp4, cam3.mp4, cam4.mp4 (sample)';
-      document.getElementById('inputs-status').classList.add('loaded');
+      document.getElementById('reset-btn').style.display = 'inline-block';
       updateRunButton();
-      toast('Sample project loaded — click "Sync my footage" to see results.', 'ok');
+      toast('Sample project loaded. Click "Sync footage" to inspect results.', 'ok');
     }
 
-    // ─── RESET ────────────────────────────────────────────────────────────────
-    document.getElementById('reset-btn').onclick = () => {
-      isDemo = false; sessionId = null; refFile = null; inputFiles = [];
+    function resetState() {
+      isDemo = false;
+      selectedFiles = [];
       document.getElementById('demo-flag').classList.remove('show');
       document.getElementById('reset-btn').style.display = 'none';
-      document.getElementById('ref-btn').disabled = false;
-      document.getElementById('inputs-btn').disabled = false;
-      document.getElementById('ref-status').textContent = 'No file selected';
-      document.getElementById('ref-status').classList.remove('loaded');
-      document.getElementById('inputs-status').textContent = 'No cameras added yet';
-      document.getElementById('inputs-status').classList.remove('loaded');
+      renderFileList();
       document.getElementById('report-table').style.display = 'none';
       document.getElementById('report-empty').style.display = 'block';
       document.getElementById('report-body').innerHTML = '';
       document.getElementById('switches-panel').style.display = 'none';
       document.getElementById('switch-list').innerHTML = '';
-      document.getElementById('review-callout').classList.remove('show');
-      document.getElementById('review-list').innerHTML = '';
-      document.getElementById('success-bar').classList.remove('show');
       document.getElementById('export-section').classList.remove('show');
-      setProgressHidden();
       hideError();
-      ['export-timeline-btn', 'save-report-btn', 'save-csv-btn', 'switch-btn']
-        .forEach(id => document.getElementById(id).disabled = true);
+      clearInterval(elapsedTimer);
+      document.getElementById('progress-box').classList.remove('show');
       updateRunButton();
-      ensureSession().catch(() => { });
-      toast('Reset. Try the sample project or upload your own footage.');
-    };
-
-    // ─── PROGRESS ─────────────────────────────────────────────────────────────
-    function setProgress(msg) {
-      document.getElementById('progress-wrap').classList.add('show');
-      document.getElementById('progress-msg').textContent = msg;
     }
-    function setProgressHidden() {
-      document.getElementById('progress-wrap').classList.remove('show');
-      document.getElementById('progress-msg').textContent = '';
+
+    document.getElementById('reset-btn').onclick = resetState;
+
+    // ─── PROGRESS STAGES & ELAPSED TIME ───────────────────────────────────────
+    function startProgress(stageName) {
+      document.getElementById('progress-box').classList.add('show');
+      document.getElementById('stage-name').textContent = stageName;
+      startTime = Date.now();
+      clearInterval(elapsedTimer);
+      elapsedTimer = setInterval(() => {
+        const sec = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('elapsed-time').textContent = sec + 's elapsed';
+      }, 1000);
+    }
+
+    function updateStage(stageName, fillPercent) {
+      document.getElementById('stage-name').textContent = stageName;
+      const fill = document.getElementById('progress-fill');
+      if (fillPercent !== undefined) {
+        fill.classList.remove('indeterminate');
+        fill.style.width = fillPercent + '%';
+      } else {
+        fill.classList.add('indeterminate');
+      }
+    }
+
+    function stopProgress() {
+      clearInterval(elapsedTimer);
+      document.getElementById('progress-box').classList.remove('show');
     }
 
     // ─── RUN SYNC ─────────────────────────────────────────────────────────────
     document.getElementById('run-btn').onclick = async () => {
-      if (isDemo) { await runDemoSync(); return; }
-
       const runBtn = document.getElementById('run-btn');
-      const spinner = document.getElementById('run-spinner');
-      const btnTxt = document.getElementById('run-btn-text');
-
       runBtn.disabled = true;
-      spinner.classList.add('show');
-      btnTxt.textContent = 'Working…';
       hideError();
-      document.getElementById('success-bar').classList.remove('show');
+
+      if (isDemo) {
+        startProgress('Aligning cameras…');
+        updateStage('Extracting audio…', 30);
+        await new Promise(r => setTimeout(r, 600));
+        updateStage('Aligning cameras…', 70);
+        await new Promise(r => setTimeout(r, 600));
+        updateStage('Scoring…', 95);
+        await new Promise(r => setTimeout(r, 400));
+        stopProgress();
+        renderReport(SAMPLE_RESULTS);
+        enablePostSync();
+        runBtn.disabled = false;
+        toast('Sample project synced.', 'ok');
+        return;
+      }
 
       try {
-        setProgress('Connecting to server…');
         await ensureSession();
+        startProgress('Uploading…');
 
-        setProgress('Uploading your footage…');
+        const refItem = selectedFiles.find(f => f.isRef);
+        const inputItems = selectedFiles.filter(f => !f.isRef);
 
-        const syncMode = document.getElementById('sync-mode-select').value;
-        const driftCorrect = document.getElementById('drift-correct-chk').checked;
-        const driftWindow = document.getElementById('drift-window-select').value;
-
-        // Extract 16kHz audio in the browser via Web Audio API
-        // This drops upload from hundreds of MBs to ~2-5 MBs and prevents server OOM crashes
-        setProgress('Optimizing audio in browser (extracting 16kHz WAV)...');
-        const refAudio = await extractAudioTrackClient(refFile, msg => setProgress(msg));
+        updateStage('Extracting audio in browser…', 20);
+        const refAudio = await extractAudioTrackClient(refItem.file);
 
         const inputAudios = [];
-        for (let i = 0; i < inputFiles.length; i++) {
-          setProgress(`Optimizing camera ${i + 1}/${inputFiles.length} in browser...`);
-          const audio = await extractAudioTrackClient(inputFiles[i], msg => setProgress(msg));
-          inputAudios.push(audio);
+        for (let i = 0; i < inputItems.length; i++) {
+          updateStage(`Extracting audio (${i + 1}/${inputItems.length})…`, 20 + Math.round((i / inputItems.length) * 20));
+          inputAudios.push(await extractAudioTrackClient(inputItems[i].file));
         }
 
-        const metadata = {
-          reference_name: refFile.name,
-          input_names: inputFiles.map(f => f.name)
-        };
+        const syncMode = document.getElementById('sync-mode-select').value;
+        const driftWindow = document.getElementById('drift-window-select').value;
 
         const form = new FormData();
         form.append('session_id', sessionId);
         form.append('reference', refAudio);
         inputAudios.forEach(f => form.append('inputs', f));
-        form.append('metadata', JSON.stringify(metadata));
+        form.append('metadata', JSON.stringify({
+          reference_name: refItem.file.name,
+          input_names: inputItems.map(item => item.file.name)
+        }));
         form.append('sync_mode', syncMode);
-        form.append('drift_correct', driftCorrect ? 'true' : 'false');
+        form.append('drift_correct', 'true');
         form.append('drift_window', driftWindow);
 
-        // Upload footage with real-time percentage tracker
+        updateStage('Uploading…', 45);
+
         const data = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', API + '/api/sync');
-
-          xhr.upload.onprogress = (e) => {
+          xhr.upload.onprogress = e => {
             if (e.lengthComputable) {
-              const pct = Math.round((e.loaded / e.total) * 100);
-              const mbLoaded = (e.loaded / (1024 * 1024)).toFixed(1);
-              const mbTotal = (e.total / (1024 * 1024)).toFixed(1);
-              if (pct < 100) {
-                setProgress(`Uploading media files: ${pct}% (${mbLoaded} MB / ${mbTotal} MB)...`);
-              } else {
-                setProgress('Upload complete! Analyzing audio waveforms & timing...');
-              }
+              const pct = Math.round((e.loaded / e.total) * 35);
+              updateStage('Uploading…', 45 + pct);
             }
           };
-
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                resolve(JSON.parse(xhr.responseText));
-              } catch (_) {
-                reject(new Error("Server returned an invalid JSON response."));
-              }
+              try { resolve(JSON.parse(xhr.responseText)); }
+              catch (_) { reject(new Error("Invalid server response format.")); }
             } else {
-              let errMsg = 'Server error ' + xhr.status;
-              try {
-                const parsed = JSON.parse(xhr.responseText);
-                if (parsed.error) errMsg = parsed.error;
-              } catch (_) {
-                if (xhr.status === 502 || xhr.status === 504) {
-                  errMsg = 'Server timed out or exceeded memory during video processing (502/504). On free cloud tiers, please test with shorter clips or pure audio (.wav/.mp3).';
-                }
-              }
-              reject(new Error(errMsg));
+              reject(new Error("Processing request failed on host."));
             }
           };
-
-          xhr.onerror = () => reject(new Error('Network connection failed or server closed connection.'));
-          xhr.ontimeout = () => reject(new Error('Upload or sync request timed out.'));
+          xhr.onerror = () => reject(new Error("Network connection failed during sync."));
+          updateStage('Aligning cameras…', 85);
           xhr.send(form);
         });
 
+        updateStage('Scoring…', 98);
         renderReport(data.results);
-        enablePostSyncButtons();
-
-        const goodCount = data.results.filter(r => r.badge === 'green').length;
-        const total = data.results.length;
-        document.getElementById('success-msg').textContent =
-          'Sync complete — ' + goodCount + ' of ' + total + ' cameras aligned with high confidence.';
-        document.getElementById('success-bar').classList.add('show');
-        toast('All done! Scroll down to see your results.', 'ok');
-        document.getElementById('backend-dot').className = 'nav-dot online';
+        enablePostSync();
+        toast('Sync complete.', 'ok');
 
       } catch (err) {
-        const e = friendlyError(err.message);
+        const e = plainEnglishError(err.message);
         showError(e.title, e.msg, e.action, e.fn);
         toast(e.title, 'error');
-        if (/fetch|network|failed/i.test(err.message)) {
-          document.getElementById('backend-dot').className = 'nav-dot offline';
-        }
       } finally {
+        stopProgress();
         runBtn.disabled = false;
-        spinner.classList.remove('show');
-        btnTxt.textContent = 'Sync my footage →';
-        setProgressHidden();
+        updateRunButton();
       }
     };
 
-    async function runDemoSync() {
-      const runBtn = document.getElementById('run-btn');
-      const spinner = document.getElementById('run-spinner');
-      const btnTxt = document.getElementById('run-btn-text');
-      runBtn.disabled = true; spinner.classList.add('show'); btnTxt.textContent = 'Working…';
-      hideError();
-
-      setProgress('Extracting audio from 4 sources…'); await sleep(700);
-      setProgress('Comparing audio waveforms across cameras…'); await sleep(800);
-      setProgress('Calculating exact time offsets…'); await sleep(600);
-      setProgress('Checking for timing drift…'); await sleep(600);
-
-      renderReport(DEMO_RESULTS);
-      enablePostSyncButtons();
-
-      const goodCount = DEMO_RESULTS.filter(r => r.badge === 'green').length;
-      document.getElementById('success-msg').textContent =
-        'Sync complete — ' + goodCount + ' of ' + DEMO_RESULTS.length + ' cameras aligned with high confidence. (Sample project)';
-      document.getElementById('success-bar').classList.add('show');
-
-      runBtn.disabled = false; spinner.classList.remove('show'); btnTxt.textContent = 'Sync my footage →';
-      setProgressHidden();
-      toast('Sample sync done — scroll down to see your results.', 'ok');
-    }
-
-    function enablePostSyncButtons() {
-      ['export-timeline-btn', 'export-xmeml-btn', 'save-report-btn', 'save-csv-btn', 'switch-btn']
-        .forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.disabled = false;
-        });
+    function enablePostSync() {
+      document.getElementById('export-timeline-btn').disabled = false;
+      document.getElementById('switch-btn').disabled = false;
       document.getElementById('export-section').classList.add('show');
-      document.getElementById('fps-input-switch').value = document.getElementById('fps-input').value;
     }
 
-    // ─── FLAG LABELS ──────────────────────────────────────────────────────────
-    const FLAG_LABELS = {
-      'LOW_ENERGY_SILENCE': 'Very quiet audio — may not sync reliably',
-      'SHORT_CLIP': 'Clip is short — less overlap to work with',
-      'HIGH_NOISE_FLOOR': 'High background noise detected',
-      'LOW_SNR': 'Poor signal quality',
-      'CLIPPING': 'Audio peaks detected — possible distortion',
-    };
-    function friendlyFlag(f) { return FLAG_LABELS[f] || f.replace(/_/g, ' ').toLowerCase(); }
-
-    // ─── RENDER REPORT ────────────────────────────────────────────────────────
+    // ─── RENDER RESULTS TABLE ─────────────────────────────────────────────────
     function renderReport(results) {
       const tbody = document.getElementById('report-body');
       tbody.innerHTML = '';
-      const reviewItems = [];
 
       results.forEach(r => {
         const tr = document.createElement('tr');
         const badge = r.badge || 'yellow';
-        const rowCls = badge === 'green' ? 'row-good' : badge === 'red' ? 'row-bad' : 'row-warn';
-        tr.className = rowCls;
+        tr.className = badge === 'green' ? 'row-good' : badge === 'red' ? 'row-bad' : 'row-warn';
 
         // Offset
-        const offsetSec = r.offset_sec !== null ? r.offset_sec : null;
-        let offsetHtml = 'N/A';
-        if (offsetSec !== null) {
-          const sign = offsetSec >= 0 ? '+' : '';
-          const abs = Math.abs(offsetSec);
-          let explain = '';
-          if (r.source === 'Reference') explain = 'Reference track (no offset)';
-          else if (abs < 0.01) explain = 'Starts at same time';
-          else {
-            const dir = offsetSec > 0 ? 'after' : 'before';
-            explain = 'Starts ' + abs.toFixed(2) + 's ' + dir + ' reference';
-          }
-          offsetHtml = '<div class="offset-val">' + sign + offsetSec.toFixed(3) + 's</div><div class="offset-explain">' + explain + '</div>';
-        }
+        const offsetSec = r.offset_sec !== null ? r.offset_sec : 0;
+        const sign = offsetSec >= 0 ? '+' : '';
+        const abs = Math.abs(offsetSec);
+        let explain = '';
+        if (r.source === 'Reference') explain = 'Reference track';
+        else if (abs < 0.01) explain = 'Starts simultaneously';
+        else explain = `Starts ${abs.toFixed(2)}s ${offsetSec > 0 ? 'after' : 'before'} reference`;
 
-        // Drift
-        const driftVal = r.drift_ms_per_hour;
+        const offsetHtml = `
+          <div class="offset-val">${sign}${offsetSec.toFixed(3)}s</div>
+          <div class="offset-explain">${explain}</div>
+        `;
+
+        // Drift (When too short, display informative string)
         let driftHtml = '—';
-        if (driftVal !== null && driftVal !== undefined) {
-          const absDrift = Math.abs(driftVal);
-          const driftDisp = driftVal.toFixed(1);
-          let vCls, vTxt;
-          if (r.source === 'Reference' || absDrift < 10) { vCls = 'ok'; vTxt = '✓ negligible'; }
-          else if (absDrift < 50) { vCls = 'warn'; vTxt = '⚠ moderate'; }
-          else { vCls = 'bad'; vTxt = '⚠ significant'; }
-          const ciHtml = (r.drift_ci_lower && r.drift_ci_lower !== 0)
-            ? '<span class="drift-ci">Range: ' + r.drift_ci_lower + ' to ' + r.drift_ci_upper + ' ms/hr</span>' : '';
-          driftHtml = '<div class="drift-val">' + driftDisp + ' ms/hr<span class="drift-verdict ' + vCls + '">' + vTxt + '</span></div>' + ciHtml;
+        const isShortClip = (r.robustness_flags && r.robustness_flags.includes('SHORT_CLIP')) || (r.total_windows === 1 || r.total_windows === '1');
+        if (r.source === 'Reference') {
+          driftHtml = '<span class="mono" style="color:var(--ink-faint);font-size:12px;">0.0 ms/hr</span>';
+        } else if (isShortClip) {
+          driftHtml = '<span style="font-size:12px;color:var(--ink-dim);">Clip too short to measure drift</span>';
+        } else if (r.drift_ms_per_hour !== null && r.drift_ms_per_hour !== undefined) {
+          const absDrift = Math.abs(r.drift_ms_per_hour);
+          driftHtml = `<span class="mono" style="font-size:12.5px;">${r.drift_ms_per_hour.toFixed(1)} ms/hr</span>`;
         }
 
-        // Match quality
-        const confPct = Math.round(r.confidence * 100);
-        let mLabel, mCls;
-        if (r.source === 'Reference') { mLabel = 'reference'; mCls = 'good'; }
-        else if (confPct >= 80) { mLabel = 'great match ✓'; mCls = 'good'; }
-        else if (confPct >= 50) { mLabel = 'check this one'; mCls = 'warn'; }
-        else { mLabel = 'needs review'; mCls = 'bad'; }
-        const confHtml = '<div class="match-pct">' + confPct + '%</div><div class="match-label ' + mCls + '">' + mLabel + '</div>';
+        // Match Quality Bands (Locked / Check manually / Failed)
+        let bandLabel = 'Locked';
+        let bandClass = 'band-locked';
+        const confVal = r.confidence !== null ? r.confidence : 0;
+        const confPct = Math.round(confVal * 100);
 
-        // Flags
-        const flags = (r.robustness_flags || []);
-        const flagsHtml = flags.length
-          ? flags.map(f => '<span class="flag-tag">' + friendlyFlag(f) + '</span>').join('') : '—';
+        if (r.source === 'Reference') {
+          bandLabel = 'Locked (Ref)';
+          bandClass = 'band-locked';
+        } else if (confVal >= 0.8) {
+          bandLabel = 'Locked';
+          bandClass = 'band-locked';
+        } else if (confVal >= 0.5) {
+          bandLabel = 'Check manually';
+          bandClass = 'band-check';
+        } else {
+          bandLabel = 'Failed';
+          bandClass = 'band-failed';
+        }
 
-        tr.innerHTML =
-          '<td><div class="source-name">' + r.source + '</div><div class="source-file">' + r.file + '</div></td>' +
-          '<td>' + offsetHtml + '</td>' +
-          '<td>' + driftHtml + '</td>' +
-          '<td>' + confHtml + '</td>' +
-          '<td>' + flagsHtml + '</td>';
+        const matchHtml = `
+          <div class="band-pill ${bandClass}">${bandLabel}</div>
+          <div class="numeric-sec">${confPct}% score</div>
+        `;
+
+        // Diagnostic notes
+        const flags = r.robustness_flags || [];
+        const notesHtml = flags.length ? flags.join(', ').toLowerCase().replace(/_/g, ' ') : 'Clean audio';
+
+        tr.innerHTML = `
+          <td><div class="source-name">${r.source}</div><div class="source-file">${r.file}</div></td>
+          <td>${offsetHtml}</td>
+          <td>${driftHtml}</td>
+          <td>${matchHtml}</td>
+          <td style="font-size:12px;color:var(--ink-dim);">${notesHtml}</td>
+        `;
         tbody.appendChild(tr);
-
-        if (badge === 'red' || (r.status || '').includes('Review')) {
-          const absDrift = Math.abs(r.drift_ms_per_hour || 0);
-          let reason = confPct < 50 ? 'only ' + confPct + '% match quality' : '';
-          if (absDrift >= 50) reason += (reason ? ' and ' : '') + r.drift_ms_per_hour.toFixed(0) + ' ms/hr drift';
-          reviewItems.push(r.source + ' — ' + (reason || 'needs manual review'));
-        }
       });
 
       document.getElementById('report-table').style.display = 'table';
       document.getElementById('report-empty').style.display = 'none';
-
-      const reviewCallout = document.getElementById('review-callout');
-      const reviewList = document.getElementById('review-list');
-      reviewList.innerHTML = '';
-      if (reviewItems.length > 0) {
-        reviewItems.forEach(item => {
-          const li = document.createElement('li');
-          li.textContent = item;
-          reviewList.appendChild(li);
-        });
-        reviewCallout.classList.add('show');
-        reviewCallout.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } else {
-        reviewCallout.classList.remove('show');
-      }
     }
 
-    // ─── SAVE REPORT JSON ────────────────────────────────────────────────────
-    document.getElementById('save-report-btn').onclick = () => {
+    // ─── EXPORT TIMELINE (FCPXML) ───────────────────────────────────────────
+    document.getElementById('export-timeline-btn').onclick = async () => {
+      const fps = parseFloat(document.getElementById('fps-input').value || '25');
       if (isDemo) {
-        downloadBlob(new Blob([JSON.stringify(DEMO_RESULTS, null, 2)], { type: 'application/json' }), 'sync_report.demo.json');
-        toast('Raw data downloaded.', 'ok'); return;
+        downloadBlob(new Blob([buildSampleFCPXML("synccut_timeline")], { type: 'application/xml' }), 'synccut_timeline.demo.fcpxml');
+        toast('Sample timeline downloaded.', 'ok');
+        return;
       }
-      window.location = '/api/report/download?session_id=' + sessionId;
+      try {
+        const res = await fetch(API + '/api/export/timeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, fps, format: 'fcpxml' })
+        });
+        if (!res.ok) throw new Error('Export failed');
+        downloadBlob(await res.blob(), 'synccut_timeline.fcpxml');
+        toast('FCPXML timeline downloaded.', 'ok');
+      } catch (err) {
+        const e = plainEnglishError(err.message);
+        showError(e.title, e.msg);
+        toast(e.title, 'error');
+      }
     };
 
-    // ─── SAVE CSV REPORT ──────────────────────────────────────────────────────
+    // ─── EXPORT PREMIERE (XML) ────────────────────────────────────────────────
+    document.getElementById('export-xmeml-btn').onclick = async () => {
+      const fps = parseFloat(document.getElementById('fps-input').value || '25');
+      if (isDemo) {
+        downloadBlob(new Blob(['<xmeml version="4"><sequence><name>SyncCut Demo</name></sequence></xmeml>'], { type: 'application/xml' }), 'timeline_premiere.demo.xml');
+        toast('Premiere XML downloaded.', 'ok');
+        return;
+      }
+      try {
+        const res = await fetch(API + '/api/export/timeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, fps, format: 'xmeml' })
+        });
+        if (!res.ok) throw new Error('Export failed');
+        downloadBlob(await res.blob(), 'timeline_premiere.xml');
+        toast('Premiere XML downloaded.', 'ok');
+      } catch (err) {
+        const e = plainEnglishError(err.message);
+        showError(e.title, e.msg);
+        toast(e.title, 'error');
+      }
+    };
+
+    // ─── CSV & JSON EXPORTS ───────────────────────────────────────────────────
     document.getElementById('save-csv-btn').onclick = () => {
       if (isDemo) {
-        const header = 'Source,File,Offset_Sec,Drift_MS_Per_HR,Drift_CI_Lower,Drift_CI_Upper,Confidence,Badge,Status,Robustness_Flags\n';
-        const rows = DEMO_RESULTS.map(r =>
-          r.source + ',' + r.file + ',' + r.offset_sec + ',' + r.drift_ms_per_hour + ',' + (r.drift_ci_lower || '') + ',' + (r.drift_ci_upper || '') + ',' + r.confidence + ',' + r.badge + ',' + r.status + ',"' + (r.robustness_flags || []).join('; ') + '"'
-        ).join('\n');
-        downloadBlob(new Blob([header + rows], { type: 'text/csv' }), 'sync_report.demo.csv');
-        toast('Spreadsheet downloaded.', 'ok'); return;
+        downloadBlob(new Blob(['Source,File,Offset_Sec\nReference,cam1.mp4,0.0\nCamera A,cam2.mp4,1.46\n'], { type: 'text/csv' }), 'sync_report.demo.csv');
+        return;
       }
       window.location = '/api/report/csv?session_id=' + sessionId;
     };
 
-    // ─── EXPORT TIMELINE (FCPXML) ───────────────────────────────────────────
-    document.getElementById('export-timeline-btn').onclick = async () => {
+    document.getElementById('save-report-btn').onclick = () => {
       if (isDemo) {
-        downloadBlob(new Blob([buildDemoFCPXML("synccut_timeline")], { type: 'application/xml' }), 'timeline.demo.fcpxml');
-        toast('Sample timeline downloaded. Run a real sync to link to your actual media files.', 'warn'); return;
-      }
-      const fps = parseFloat(document.getElementById('fps-input').value || '25');
-      try {
-        const res = await fetch(API + '/api/export/timeline', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, fps, format: 'fcpxml' })
-        });
-        if (!res.ok) {
-          const d = await res.json();
-          const e = friendlyError(d.error || 'Export failed');
-          showError(e.title, e.msg); toast(e.title, 'error'); return;
-        }
-        downloadBlob(await res.blob(), 'synccut_timeline.fcpxml');
-        toast('FCPXML timeline downloaded — drag it into Final Cut or Resolve.', 'ok');
-      } catch (err) {
-        const e = friendlyError(err.message);
-        showError(e.title, e.msg); toast(e.title, 'error');
-      }
-    };
-
-    // ─── EXPORT TIMELINE (PREMIERE PRO / FCP7 XML) ───────────────────────────
-    const xmemlBtn = document.getElementById('export-xmeml-btn');
-    if (xmemlBtn) {
-      xmemlBtn.onclick = async () => {
-        if (isDemo) {
-          const demoXml = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="4">\n  <sequence>\n    <name>SyncCut Demo Sequence</name>\n    <duration>7500</duration>\n    <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>\n  </sequence>\n</xmeml>';
-          downloadBlob(new Blob([demoXml], { type: 'application/xml' }), 'timeline_premiere.demo.xml');
-          toast('Sample Premiere XML downloaded.', 'warn'); return;
-        }
-        const fps = parseFloat(document.getElementById('fps-input').value || '25');
-        try {
-          const res = await fetch(API + '/api/export/timeline', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId, fps, format: 'xmeml' })
-          });
-          if (!res.ok) {
-            const d = await res.json();
-            const e = friendlyError(d.error || 'Export failed');
-            showError(e.title, e.msg); toast(e.title, 'error'); return;
-          }
-          downloadBlob(await res.blob(), 'timeline_premiere.xml');
-          toast('Premiere Pro XML downloaded — import directly into Adobe Premiere Pro.', 'ok');
-        } catch (err) {
-          const e = friendlyError(err.message);
-          showError(e.title, e.msg); toast(e.title, 'error');
-        }
-      };
-    }
-
-    // ─── SUGGEST SWITCHES ────────────────────────────────────────────────────
-    document.getElementById('switch-btn').onclick = async () => {
-      const switchPanel = document.getElementById('switches-panel');
-      const switchSpinner = document.getElementById('switch-spinner');
-      switchPanel.style.display = 'block';
-      switchPanel.scrollIntoView({ behavior: 'smooth' });
-      switchSpinner.classList.add('show');
-
-      if (isDemo) {
-        setProgress('Finding the best camera for each moment…');
-        await sleep(900);
-        renderSwitches(DEMO_SWITCHES);
-        switchSpinner.classList.remove('show');
-        setProgressHidden();
-        toast('Suggested edit ready — scroll down to see it.', 'ok');
+        downloadBlob(new Blob([JSON.stringify(SAMPLE_RESULTS, null, 2)], { type: 'application/json' }), 'sync_report.demo.json');
         return;
       }
+      window.location = '/api/report/download?session_id=' + sessionId;
+    };
+
+    // ─── SUGGESTED EDIT ROUTE ─────────────────────────────────────────────────
+    document.getElementById('switch-btn').onclick = async () => {
+      const panel = document.getElementById('switches-panel');
+      const spinner = document.getElementById('switch-spinner');
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth' });
+
+      if (isDemo) {
+        renderSwitches(SAMPLE_SWITCHES);
+        return;
+      }
+
+      spinner.style.display = 'inline-block';
       try {
         const res = await fetch(API + '/api/switches', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ session_id: sessionId })
         });
         const data = await res.json();
-        if (!res.ok) {
-          const e = friendlyError(data.error || 'Switch analysis failed');
-          showError(e.title, e.msg); toast(e.title, 'error');
-          switchPanel.style.display = 'none'; return;
-        }
-        if (!data.segments || data.segments.length === 0) {
-          toast("No camera switch suggestions found. Try with more cameras or a longer recording.", 'warn');
-          switchPanel.style.display = 'none'; return;
-        }
-        renderSwitches(data.segments);
-        toast(data.segments.length + ' switch points suggested — download the timeline when ready.', 'ok');
+        if (!res.ok) throw new Error(data.error || 'Switch detection failed');
+        renderSwitches(data.segments || []);
       } catch (err) {
-        const e = friendlyError(err.message);
-        showError(e.title, e.msg); toast(e.title, 'error');
-        switchPanel.style.display = 'none';
+        const e = plainEnglishError(err.message);
+        showError(e.title, e.msg);
+        toast(e.title, 'error');
       } finally {
-        switchSpinner.classList.remove('show');
+        spinner.style.display = 'none';
       }
     };
 
@@ -2279,69 +1893,71 @@
         const m = Math.floor(s / 60), sec = (s % 60).toFixed(1);
         return m > 0 ? m + ':' + sec.toString().padStart(4, '0') : sec + 's';
       };
-      segments.slice(0, 200).forEach(s => {
-        const dur = (s.end_sec - s.start_sec);
+
+      segments.forEach(s => {
+        const dur = (s.end_sec - s.start_sec).toFixed(1);
         const div = document.createElement('div');
         div.className = 'switch-item';
-        div.innerHTML =
-          '<span class="switch-time">' + toHMS(s.start_sec) + ' – ' + toHMS(s.end_sec) + '</span>' +
-          '<span class="switch-cam">' + s.camera + '</span>' +
-          '<span class="switch-dur">' + dur.toFixed(1) + 's</span>';
+        div.innerHTML = `
+          <div class="switch-time">${toHMS(s.start_sec)} – ${toHMS(s.end_sec)}</div>
+          <div class="switch-cam">${s.camera}</div>
+          <div class="switch-dur">${dur}s</div>
+        `;
         list.appendChild(div);
       });
-      if (segments.length > 200) {
-        const div = document.createElement('div');
-        div.className = 'switch-item';
-        div.innerHTML = '<span></span><span class="switch-cam" style="color:var(--ink-faint)">… and ' + (segments.length - 200) + ' more cuts</span><span></span>';
-        list.appendChild(div);
-      }
-      document.getElementById('fps-input-switch').value = document.getElementById('fps-input').value;
     }
 
-    // ─── EXPORT SWITCH TIMELINE ──────────────────────────────────────────────
+    // Export Rough cut timeline
     document.getElementById('export-switch-btn').onclick = async () => {
+      const fps = parseFloat(document.getElementById('fps-input').value || '25');
       if (isDemo) {
-        downloadBlob(new Blob([buildDemoFCPXML("synccut_suggested_edit")], { type: 'application/xml' }), 'suggested_edit.demo.fcpxml');
-        toast('Sample suggested edit downloaded.', 'warn'); return;
+        downloadBlob(new Blob([buildSampleFCPXML("synccut_rough_cut")], { type: 'application/xml' }), 'synccut_rough_cut.demo.fcpxml');
+        toast('Sample rough cut downloaded.', 'ok');
+        return;
       }
-      const fps = parseFloat(document.getElementById('fps-input-switch').value || '25');
       try {
         const res = await fetch(API + '/api/export/switch-timeline', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ session_id: sessionId, fps })
         });
-        if (!res.ok) {
-          const d = await res.json();
-          const e = friendlyError(d.error || 'Export failed');
-          showError(e.title, e.msg); toast(e.title, 'error'); return;
-        }
-        downloadBlob(await res.blob(), 'synccut_suggested_edit.fcpxml');
-        toast('Suggested edit downloaded — review in your editor before finalizing.', 'ok');
+        if (!res.ok) throw new Error('Rough cut export failed');
+        downloadBlob(await res.blob(), 'synccut_rough_cut.fcpxml');
+        toast('Rough cut sequence downloaded.', 'ok');
       } catch (err) {
-        const e = friendlyError(err.message);
-        showError(e.title, e.msg); toast(e.title, 'error');
+        const e = plainEnglishError(err.message);
+        showError(e.title, e.msg);
+        toast(e.title, 'error');
       }
     };
 
-    // ─── DOWNLOAD HELPER ─────────────────────────────────────────────────────
     function downloadBlob(blob, filename) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click(); a.remove();
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       URL.revokeObjectURL(url);
     }
 
-    // ─── DEMO FCPXML BUILDER (backend logic preserved exactly) ───────────────
-    function buildDemoFCPXML(name) {
-      const header = '<?xml version="1.0" encoding="UTF-8"?>\n<fcpxml version="1.8">\n  <resources>\n    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s" width="1920" height="1080"/>\n    <asset id="a1" name="cam1.mp4" src="file:///demo/cam1.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>\n    <asset id="a2" name="cam2.mp4" src="file:///demo/cam2.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>\n    <asset id="a3" name="cam3.mp4" src="file:///demo/cam3.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>\n    <asset id="a4" name="cam4.mp4" src="file:///demo/cam4.mp4" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000"/>\n  </resources>\n  <library>\n    <event name="SyncCut Demo">\n      <project name="' + name + '">\n        <sequence format="r1" duration="300/25s">\n          <spine>';
-      const clips = DEMO_SWITCHES.slice(0, 8).map(s => {
-        const dur = Math.round((s.end_sec - s.start_sec) * 25);
-        const off = Math.round(s.start_sec * 25);
-        const camIdx = { "Reference": 1, "Camera A": 2, "Camera B": 3, "Camera C": 4 }[s.camera] || 1;
-        return '            <asset-clip name="' + s.camera + '" ref="a' + camIdx + '" offset="' + (off * 100) + '/2500s" duration="' + (dur * 100) + '/2500s" start="0s">\n              <marker start="0s" duration="' + (dur * 100) + '/2500s" value="Suggested Switch: ' + s.camera + '" note="Active speaker rough cut suggestion"/>\n            </asset-clip>';
-      }).join('\n');
-      return header + '\n' + clips + '\n          </spine>\n        </sequence>\n      </project>\n    </event>\n  </library>\n</fcpxml>';
+    function buildSampleFCPXML(name) {
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.8">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s" width="1920" height="1080"/>
+  </resources>
+  <library>
+    <event name="SyncCut Demo">
+      <project name="${name}">
+        <sequence format="r1" duration="1500/25s">
+          <spine></spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>`;
     }
   </script>
 

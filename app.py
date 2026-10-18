@@ -101,6 +101,25 @@ def dashboard():
     return render_template("dashboard.html")
 
 
+@app.route("/api/waitlist", methods=["POST"])
+def waitlist_signup():
+    """Handle early access / beta waitlist signup requests."""
+    try:
+        data = request.get_json(silent=True) or request.form.to_dict()
+        email = data.get("email", "").strip()
+        nle = data.get("nle", "").strip()
+        cameras = data.get("cameras", "").strip()
+        # Log signup to a local file or standard output for beta tracking
+        log_dir = os.path.join(APP_ROOT, "uploads")
+        os.makedirs(log_dir, exist_ok=True)
+        waitlist_file = os.path.join(log_dir, "waitlist.jsonl")
+        with open(waitlist_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"email": email, "nle": nle, "cameras": cameras}) + "\n")
+        return jsonify({"status": "ok", "message": "Successfully added to beta waitlist."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 # ────────────────────────────── Session API ───────────────────────────────────
 
 @app.route("/api/session", methods=["POST"])

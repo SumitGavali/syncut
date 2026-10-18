@@ -25,8 +25,17 @@ def windowed_offsets(sig1, sig2, fs, window_sec=DEFAULT_DRIFT_WINDOW_SEC, hop_se
 
     results = []
     min_len = min(len(sig1), len(sig2))
-    pos = 0
+    total_duration_sec = min_len / float(fs)
 
+    # Prevent CPU throttling/timeouts on cloud instances:
+    # Adapt hop_sec so we calculate at most ~20 representative windows
+    max_windows = 20
+    if min_len > win_samples:
+        est_windows = (min_len - win_samples) / hop_samples
+        if est_windows > max_windows:
+            hop_samples = max(hop_samples, int((min_len - win_samples) / max_windows))
+
+    pos = 0
     while pos + win_samples <= min_len:
         chunk1 = sig1[pos : pos + win_samples]
         chunk2 = sig2[pos : pos + win_samples]

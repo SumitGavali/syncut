@@ -11,13 +11,16 @@ from config import TARGET_SR, MAX_TAU_SEC, ROBUST_LOSS, RANSAC_ENABLE, RANSAC_TH
 
 
 def load_wav(path):
-    """Load WAV audio file into float [-1.0, 1.0] mono array."""
+    """Load WAV audio file into float32 [-1.0, 1.0] mono array."""
     sr, data = wavfile.read(path)
-    if data.dtype != np.float32 and data.dtype != np.float64:
-        max_val = np.iinfo(data.dtype).max
-        data = data.astype(np.float64) / max_val
+    if data.dtype != np.float32:
+        if np.issubdtype(data.dtype, np.integer):
+            max_val = np.iinfo(data.dtype).max
+            data = (data / float(max_val)).astype(np.float32)
+        else:
+            data = data.astype(np.float32)
     if data.ndim > 1:
-        data = data.mean(axis=1)
+        data = data.mean(axis=1).astype(np.float32)
     return sr, data
 
 
