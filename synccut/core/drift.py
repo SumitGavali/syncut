@@ -7,7 +7,7 @@ import numpy as np
 from scipy import signal
 from scipy.stats import t as student_t
 
-from config import DEFAULT_DRIFT_WINDOW_SEC, DRIFT_CORRECT_THRESHOLD_MS_PER_HR
+from synccut.config import DEFAULT_DRIFT_WINDOW_SEC, DRIFT_CORRECT_THRESHOLD_MS_PER_HR
 
 
 def windowed_offsets(sig1, sig2, fs, window_sec=DEFAULT_DRIFT_WINDOW_SEC, hop_sec=None, max_tau=10.0, use_phat=True):
@@ -15,7 +15,7 @@ def windowed_offsets(sig1, sig2, fs, window_sec=DEFAULT_DRIFT_WINDOW_SEC, hop_se
     Compute offset and confidence across sliding time windows.
     Returns list of dicts: [{"window_start_sec", "offset_sec", "confidence", "features"}]
     """
-    from sync_engine import gcc_phat
+    from synccut.core.sync_engine import gcc_phat
 
     if hop_sec is None:
         hop_sec = window_sec / 2.0

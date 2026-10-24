@@ -3,7 +3,7 @@ test_confidence.py — Unit tests for Phase 2 confidence features, calibration, 
 """
 import pytest
 import numpy as np
-from confidence import (
+from synccut.core.confidence import (
     extract_correlation_features,
     compute_heuristic_confidence,
     CalibratedConfidenceScorer,

@@ -13,7 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $ProjectRoot
 
 Write-Host "=============================================" -ForegroundColor Cyan
@@ -21,15 +21,16 @@ Write-Host "  SyncCut Windows Standalone Packager        " -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
 
 # 1. Verify ffmpeg binaries
-$ffmpegExe = Join-Path $ProjectRoot "ffmpeg_bin\ffmpeg.exe"
-$ffprobeExe = Join-Path $ProjectRoot "ffmpeg_bin\ffprobe.exe"
+$ffmpegDir = Join-Path $ProjectRoot "synccut\media\ffmpeg_bin"
+$ffmpegExe = Join-Path $ffmpegDir "ffmpeg.exe"
+$ffprobeExe = Join-Path $ffmpegDir "ffprobe.exe"
 
 if (-not (Test-Path $ffmpegExe) -or -not (Test-Path $ffprobeExe)) {
     Write-Host "[!] Checking system ffmpeg..." -ForegroundColor Yellow
     $sysFfmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
     $sysFfprobe = (Get-Command ffprobe -ErrorAction SilentlyContinue).Source
     if ($sysFfmpeg -and $sysFfprobe) {
-        New-Item -ItemType Directory -Path (Join-Path $ProjectRoot "ffmpeg_bin") -Force | Out-Null
+        New-Item -ItemType Directory -Path $ffmpegDir -Force | Out-Null
         Copy-Item $sysFfmpeg $ffmpegExe
         Copy-Item $sysFfprobe $ffprobeExe
         Write-Host "[+] Copied ffmpeg binaries into ffmpeg_bin/" -ForegroundColor Green
@@ -41,7 +42,7 @@ if (-not (Test-Path $ffmpegExe) -or -not (Test-Path $ffprobeExe)) {
 # 2. Run PyInstaller
 if (-not $SkipBuild) {
     Write-Host "[*] Building SyncCut executable with PyInstaller..." -ForegroundColor Cyan
-    pyinstaller --clean --noconfirm synccut.spec
+    pyinstaller --clean --noconfirm infra\synccut.spec
     if ($LASTEXITCODE -ne 0) {
         Write-Error "PyInstaller build failed with exit code $LASTEXITCODE."
     }

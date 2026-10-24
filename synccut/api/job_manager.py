@@ -8,12 +8,12 @@ from threading import Lock
 from flask import jsonify
 from werkzeug.utils import secure_filename
 
-from paths import get_sessions_dir, get_user_data_dir
-from extract import extract_audio
-from sync_engine import solve_multi_source_sync, load_wav
-from robustness import preflight_media_check, check_sample_rates
-from drift import windowed_offsets, analyze_drift, correct_audio_drift_resample
-from confidence import badge_and_status_from_confidence
+from synccut.paths import get_sessions_dir, get_user_data_dir
+from synccut.media.extract import extract_audio
+from synccut.core.sync_engine import solve_multi_source_sync, load_wav
+from synccut.core.robustness import preflight_media_check, check_sample_rates
+from synccut.core.drift import windowed_offsets, analyze_drift, correct_audio_drift_resample
+from synccut.core.confidence import badge_and_status_from_confidence
 
 # Global executor and job registry
 _executor = None
@@ -38,7 +38,7 @@ def submit_job(session_id: str, payload: dict, files) -> str:
         A UUID string that can be used to query job status.
     """
     job_id = uuid.uuid4().hex
-    with jobs_lock:
+    with _jobs_lock:
         _jobs[job_id] = {
             "status": "queued",
             "session_id": session_id,
@@ -52,14 +52,14 @@ def submit_job(session_id: str, payload: dict, files) -> str:
 
 def get_status(job_id: str):
     """Return a copy of the status dictionary for the given job id, or ``None`` if unknown."""
-    with jobs_lock:
+    with _jobs_lock:
         status = _jobs.get(job_id)
         if status is None:
             return None
         return status.copy()
 
 def _update_job(job_id: str, **kwargs):
-    with jobs_lock:
+    with _jobs_lock:
         if job_id in _jobs:
             _jobs[job_id].update(kwargs)
 

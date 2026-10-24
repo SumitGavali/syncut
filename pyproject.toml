@@ -18,12 +18,21 @@ dependencies = [
     "scikit-learn",
     "matplotlib",
     "flask",
-    "opentimelineio"
+    "flask-cors",
+    "opentimelineio",
+    "platformdirs",
+    "gunicorn",
 ]
 
 [project.scripts]
-synccut = "synccut:main"
-synccut-gui = "synccut_gui:main"
+synccut = "synccut.cli.main:main"
+synccut-gui = "synccut.desktop.gui:main"
+
+[tool.setuptools.packages.find]
+include = ["synccut*"]
+
+[tool.setuptools.package-data]
+synccut = ["api/templates/*", "api/static/**/*", "media/ffmpeg_bin/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

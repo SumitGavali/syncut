@@ -4,22 +4,26 @@ import sys
 
 block_cipher = None
 
-# Determine base project dir
-base_dir = os.path.abspath(SPECPATH)
+# SPECPATH is infra/; repo root is one level up
+base_dir = os.path.dirname(os.path.abspath(SPECPATH))
 
 # Binaries to bundle: ffmpeg and ffprobe
 binaries = []
-ffmpeg_exe = os.path.join(base_dir, "ffmpeg_bin", "ffmpeg.exe")
-ffprobe_exe = os.path.join(base_dir, "ffmpeg_bin", "ffprobe.exe")
-if os.path.isfile(ffmpeg_exe):
-    binaries.append((ffmpeg_exe, "bin"))
-if os.path.isfile(ffprobe_exe):
-    binaries.append((ffprobe_exe, "bin"))
+for ffmpeg_dir in (
+    os.path.join(base_dir, "synccut", "media", "ffmpeg_bin"),
+    os.path.join(base_dir, "ffmpeg_bin"),
+):
+    ffmpeg_exe = os.path.join(ffmpeg_dir, "ffmpeg.exe")
+    ffprobe_exe = os.path.join(ffmpeg_dir, "ffprobe.exe")
+    if os.path.isfile(ffmpeg_exe):
+        binaries.append((ffmpeg_exe, "bin"))
+    if os.path.isfile(ffprobe_exe):
+        binaries.append((ffprobe_exe, "bin"))
 
-# Datas to bundle: templates, static assets
+# Datas to bundle: Flask templates / static inside the package
 datas = [
-    (os.path.join(base_dir, "templates"), "templates"),
-    (os.path.join(base_dir, "static"), "static"),
+    (os.path.join(base_dir, "synccut", "api", "templates"), os.path.join("synccut", "api", "templates")),
+    (os.path.join(base_dir, "synccut", "api", "static"), os.path.join("synccut", "api", "static")),
 ]
 
 hidden_imports = [
@@ -36,7 +40,7 @@ hidden_imports = [
 ]
 
 a = Analysis(
-    ['app.py'],
+    [os.path.join(base_dir, "app.py")],
     pathex=[base_dir],
     binaries=binaries,
     datas=datas,

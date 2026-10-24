@@ -11,8 +11,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import quote
 
-from extract import get_duration
-from timeline_builder import get_audio_info
+from synccut.media.extract import get_duration
+from synccut.export.timeline_builder import get_audio_info
 
 
 def get_rate_parameters(fps: float):

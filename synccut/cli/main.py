@@ -11,12 +11,12 @@ import json
 import os
 import sys
 
-from confidence import badge_and_status_from_confidence, extract_correlation_features
-from config import DEFAULT_SYNC_MODE, DEFAULT_DRIFT_WINDOW_SEC, DRIFT_CORRECT_THRESHOLD_MS_PER_HR
-from drift import windowed_offsets, analyze_drift, correct_audio_drift_resample
-from extract import extract_audio, extract_audio_batch
-from robustness import preflight_media_check, check_sample_rates
-from sync_engine import load_wav, solve_multi_source_sync
+from synccut.core.confidence import badge_and_status_from_confidence, extract_correlation_features
+from synccut.config import DEFAULT_SYNC_MODE, DEFAULT_DRIFT_WINDOW_SEC, DRIFT_CORRECT_THRESHOLD_MS_PER_HR
+from synccut.core.drift import windowed_offsets, analyze_drift, correct_audio_drift_resample
+from synccut.media.extract import extract_audio, extract_audio_batch
+from synccut.core.robustness import preflight_media_check, check_sample_rates
+from synccut.core.sync_engine import load_wav, solve_multi_source_sync
 
 
 def process_all_sources(reference_path, input_paths, sync_mode="global", drift_correct=False, drift_window_sec=DEFAULT_DRIFT_WINDOW_SEC, drift_threshold_ms_hr=DRIFT_CORRECT_THRESHOLD_MS_PER_HR):

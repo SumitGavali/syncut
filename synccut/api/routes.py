@@ -1,0 +1,474 @@
+"""Flask route blueprints for SyncCut HTTP API and pages."""
+from __future__ import annotations
+
+import csv
+import io
+import json
+import os
+import traceback
+import uuid
+
+from flask import Blueprint, current_app, jsonify, render_template, request, send_file
+from werkzeug.utils import secure_filename
+
+import synccut.api.job_manager as job_manager
+from synccut.ai.rough_cut import export_roughcut_fcpxml, generate_active_speaker_roughcut
+from synccut.config import (
+    DEFAULT_DRIFT_WINDOW_SEC,
+    DEFAULT_SYNC_MODE,
+)
+from synccut.core.confidence import badge_and_status_from_confidence
+from synccut.core.drift import (
+    analyze_drift,
+    correct_audio_drift_resample,
+    windowed_offsets,
+)
+from synccut.core.robustness import check_sample_rates, preflight_media_check
+from synccut.core.sync_engine import load_wav, solve_multi_source_sync
+from synccut.export.fcp7_exporter import export_fcp7_xml
+from synccut.export.timeline_builder import build_timeline, export_timeline
+from synccut.media.extract import extract_audio
+from synccut.paths import get_sessions_dir
+
+bp = Blueprint("synccut", __name__)
+
+# In-memory session store — keyed per browser session (single-worker only).
+SESSIONS: dict = {}
+
+
+def _upload_root() -> str:
+    return current_app.config["UPLOAD_ROOT"]
+
+
+def _app_root() -> str:
+    return current_app.config["APP_ROOT"]
+
+
+def session_dir(session_id: str) -> str:
+    d = os.path.join(_upload_root(), session_id)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def get_session(session_id):
+    """Retrieve session or initialize gracefully if server restarted."""
+    if not session_id:
+        return None
+    if session_id not in SESSIONS:
+        sdir = session_dir(session_id)
+        report_path = os.path.join(sdir, "sync_report.json")
+        report_results = []
+        if os.path.exists(report_path):
+            try:
+                with open(report_path) as f:
+                    report_results = json.load(f)
+            except Exception:
+                pass
+
+        SESSIONS[session_id] = {
+            "reference_path": None,
+            "input_paths": [],
+            "all_signals": [],
+            "fs": 16000,
+            "report_results": report_results,
+            "report_json_path": report_path if os.path.exists(report_path) else None,
+            "media_dir": sdir,
+            "last_switches": None,
+            "last_switches_media_dir": sdir,
+        }
+    return SESSIONS[session_id]
+
+
+@bp.route("/")
+def landing():
+    return render_template("index.html")
+
+
+@bp.route("/app")
+def dashboard():
+    return render_template("dashboard.html")
+
+
+@bp.route("/api/waitlist", methods=["POST"])
+def waitlist_signup():
+    """Handle early access / beta waitlist signup requests."""
+    try:
+        data = request.get_json(silent=True) or request.form.to_dict()
+        email = data.get("email", "").strip()
+        nle = data.get("nle", "").strip()
+        cameras = data.get("cameras", "").strip()
+        log_dir = os.path.join(_app_root(), "uploads")
+        os.makedirs(log_dir, exist_ok=True)
+        waitlist_file = os.path.join(log_dir, "waitlist.jsonl")
+        with open(waitlist_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"email": email, "nle": nle, "cameras": cameras}) + "\n")
+        return jsonify({"status": "ok", "message": "Successfully added to beta waitlist."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@bp.route("/api/session", methods=["POST"])
+def new_session():
+    session_id = uuid.uuid4().hex[:12]
+    get_session(session_id)
+    return jsonify({"session_id": session_id})
+
+
+@bp.route("/api/sync", methods=["POST"])
+def run_sync():
+    """
+    Global multi-source sync.
+    Accepts: reference file, N input files, sync_mode, drift_correct flag.
+    Returns: sync report JSON with calibrated confidence badges and drift info.
+    """
+    session_id = request.form.get("session_id")
+    state = get_session(session_id)
+    if not state:
+        return jsonify({"error": "Invalid or missing session_id"}), 400
+
+    sdir = session_dir(session_id)
+
+    reference_file = request.files.get("reference")
+    input_files = request.files.getlist("inputs")
+    if not reference_file or not input_files:
+        return jsonify({"error": "A reference file and at least one source file are required."}), 400
+
+    sync_mode = request.form.get("sync_mode", DEFAULT_SYNC_MODE)
+    drift_correct = request.form.get("drift_correct", "false").lower() == "true"
+    drift_window = float(request.form.get("drift_window", DEFAULT_DRIFT_WINDOW_SEC))
+
+    meta_raw = request.form.get("metadata")
+    client_meta = {}
+    if meta_raw:
+        try:
+            client_meta = json.loads(meta_raw)
+        except Exception:
+            client_meta = {}
+
+    ref_orig_name = client_meta.get("reference_name") or reference_file.filename
+    ref_filename = secure_filename(reference_file.filename)
+    ref_path = os.path.join(sdir, ref_filename)
+    reference_file.save(ref_path)
+    state["reference_path"] = ref_path
+
+    input_paths = []
+    input_orig_names = client_meta.get("input_names", [])
+    for f in input_files:
+        fname = secure_filename(f.filename)
+        fpath = os.path.join(sdir, fname)
+        f.save(fpath)
+        input_paths.append(fpath)
+    state["input_paths"] = input_paths
+    state["media_dir"] = sdir
+
+    try:
+        all_to_extract = [ref_path] + input_paths
+        extracted_wavs = []
+        for p in all_to_extract:
+            if p.lower().endswith(".wav"):
+                extracted_wavs.append(p)
+            else:
+                extracted_wavs.append(extract_audio(p, output_dir=os.path.join(sdir, "_audio")))
+
+        ref_wav = extracted_wavs[0]
+        sr_ref, ref_sig = load_wav(ref_wav)
+
+        all_signals = [ref_sig]
+        all_labels = ["Reference"]
+        all_files = [os.path.basename(ref_orig_name)]
+        all_paths = [ref_path]
+
+        robustness_flags = {}
+        for i, src_path in enumerate(input_paths, start=1):
+            label = f"Camera {chr(64 + i)}" if i <= 26 else f"Source {i}"
+            src_wav = extracted_wavs[i]
+            sr_src, src_sig = load_wav(src_wav)
+
+            _sr_ok, _sr_msg = check_sample_rates(sr_ref, sr_src)
+            _valid, flags = preflight_media_check(src_path, src_sig, sr_src)
+            if flags:
+                robustness_flags[label] = flags
+
+            orig_input_name = (
+                input_orig_names[i - 1]
+                if (i - 1) < len(input_orig_names)
+                else os.path.basename(src_path)
+            )
+            all_signals.append(src_sig)
+            all_labels.append(label)
+            all_files.append(os.path.basename(orig_input_name))
+            all_paths.append(src_path)
+
+        state["all_signals"] = all_signals
+        state["fs"] = sr_ref
+
+        offsets, confidences, _feature_dicts = solve_multi_source_sync(
+            all_signals, sr_ref, sync_mode=sync_mode, ref_index=0
+        )
+
+        results = []
+        for idx in range(len(all_signals)):
+            label = all_labels[idx]
+            fname = all_files[idx]
+            offset = float(offsets[idx])
+            conf = float(confidences[idx])
+
+            if idx == 0:
+                drift_info = {
+                    "drift_ms_per_hour": 0.0,
+                    "is_significant": False,
+                    "reliable_windows": "-",
+                    "total_windows": "-",
+                    "drift_ci_lower_ms_per_hour": 0.0,
+                    "drift_ci_upper_ms_per_hour": 0.0,
+                }
+                badge, status = "green", "Good (reference)"
+            else:
+                windows = windowed_offsets(
+                    ref_sig, all_signals[idx], sr_ref, window_sec=drift_window
+                )
+                drift_info = analyze_drift(windows)
+                badge, status = badge_and_status_from_confidence(
+                    conf, drift_info["drift_ms_per_hour"]
+                )
+
+                if drift_correct and drift_info.get("is_significant", False):
+                    slope = drift_info["slope_sec_per_sec"]
+                    all_signals[idx] = correct_audio_drift_resample(
+                        all_signals[idx], sr_ref, slope
+                    )
+                    status += " [Drift Resampled]"
+
+            flags_for_label = robustness_flags.get(label, [])
+            results.append({
+                "source": label,
+                "file": fname,
+                "offset_sec": round(offset, 3),
+                "confidence": round(conf, 3),
+                "drift_ms_per_hour": drift_info["drift_ms_per_hour"],
+                "drift_ci_lower": drift_info.get("drift_ci_lower_ms_per_hour", 0.0),
+                "drift_ci_upper": drift_info.get("drift_ci_upper_ms_per_hour", 0.0),
+                "reliable_windows": (
+                    f"{drift_info.get('reliable_windows', '-')}/"
+                    f"{drift_info.get('total_windows', '-')}"
+                ),
+                "badge": badge,
+                "status": status,
+                "robustness_flags": flags_for_label,
+            })
+
+        state["report_results"] = results
+        report_path = os.path.join(sdir, "sync_report.json")
+        with open(report_path, "w") as f:
+            json.dump(results, f, indent=2)
+        state["report_json_path"] = report_path
+
+        return jsonify({"results": results})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/api/report/download", methods=["GET"])
+def download_report_json():
+    session_id = request.args.get("session_id")
+    state = SESSIONS.get(session_id)
+    if not state or not state.get("report_json_path"):
+        return jsonify({"error": "No report available for this session."}), 400
+    return send_file(
+        state["report_json_path"], as_attachment=True, download_name="sync_report.json"
+    )
+
+
+@bp.route("/api/preflight", methods=["POST"])
+def preflight_diagnostics():
+    """Run robustness checks on each uploaded file and return a JSON report."""
+    reference_file = request.files.get("reference")
+    input_files = request.files.getlist("inputs")
+    if not reference_file:
+        return jsonify({"error": "Reference file required for diagnostics."}), 400
+    files = [("reference", reference_file)] + [
+        (f"input_{i}", f) for i, f in enumerate(input_files)
+    ]
+    results = []
+    for label, f in files:
+        fname = secure_filename(f.filename)
+        temp_path = os.path.join(get_sessions_dir(), "tmp_diag", fname)
+        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+        f.save(temp_path)
+        try:
+            sr, sig = load_wav(temp_path)
+        except Exception:
+            sr, sig = None, None
+        ok, flags = preflight_media_check(temp_path, sig, sr)
+        results.append({"label": label, "file": fname, "valid": ok, "flags": flags})
+        os.remove(temp_path)
+    return jsonify({"diagnostics": results})
+
+
+@bp.route("/api/review", methods=["POST"])
+def review_offsets():
+    data = request.get_json(force=True)
+    session_id = data.get("session_id")
+    adjustments = data.get("adjustments", {})
+    state = SESSIONS.get(session_id)
+    if not state:
+        return jsonify({"error": "Invalid session_id"}), 400
+    for r in state.get("report_results", []):
+        label = r.get("source")
+        if label in adjustments:
+            r["offset_sec"] = float(adjustments[label])
+            r["status"] = "Manually adjusted"
+    report_path = state.get("report_json_path")
+    if report_path:
+        with open(report_path, "w") as f:
+            json.dump(state["report_results"], f, indent=2)
+    return jsonify({"status": "adjustments applied", "results": state["report_results"]})
+
+
+@bp.route("/api/sync_async", methods=["POST"])
+def run_sync_async():
+    session_id = request.form.get("session_id")
+    if not session_id:
+        return jsonify({"error": "Missing session_id"}), 400
+    payload = request.form.to_dict(flat=False)
+    files = request.files
+    job_id = job_manager.submit_job(session_id, payload, files)
+    return jsonify({"job_id": job_id})
+
+
+@bp.route("/api/job/status", methods=["GET"])
+def job_status():
+    job_id = request.args.get("job_id")
+    status = job_manager.get_status(job_id)
+    if status is None:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(status)
+
+
+@bp.route("/api/report/csv", methods=["GET"])
+def download_report_csv():
+    """Download sync confidence report as CSV."""
+    session_id = request.args.get("session_id")
+    state = SESSIONS.get(session_id)
+    if not state or not state.get("report_results"):
+        return jsonify({"error": "No report available. Run sync first."}), 400
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Source", "File", "Offset_Sec", "Drift_MS_Per_HR",
+        "Drift_CI_Lower", "Drift_CI_Upper",
+        "Confidence", "Badge", "Status", "Robustness_Flags",
+    ])
+    for r in state["report_results"]:
+        writer.writerow([
+            r["source"], r["file"], r["offset_sec"],
+            r["drift_ms_per_hour"], r.get("drift_ci_lower", ""),
+            r.get("drift_ci_upper", ""),
+            r["confidence"], r["badge"], r["status"],
+            "; ".join(r.get("robustness_flags", [])),
+        ])
+
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        as_attachment=True,
+        download_name="sync_confidence_report.csv",
+        mimetype="text/csv",
+    )
+
+
+@bp.route("/api/export/timeline", methods=["POST"])
+def export_timeline_route():
+    """Export offset-aligned timeline (FCPXML or FCP7 XML / xmeml)."""
+    data = request.get_json(force=True)
+    session_id = data.get("session_id")
+    fps = float(data.get("fps", 25))
+    export_format = data.get("format", "fcpxml").lower()
+    state = SESSIONS.get(session_id)
+    if not state or not state.get("report_json_path"):
+        return jsonify({"error": "Run sync analysis first."}), 400
+
+    sdir = session_dir(session_id)
+    try:
+        if export_format in ("fcp7", "xmeml", "xml"):
+            out_path = os.path.join(sdir, "timeline_premiere.xml")
+            export_fcp7_xml(
+                state["report_json_path"], state["media_dir"], out_path, fps=fps
+            )
+            return send_file(
+                out_path, as_attachment=True, download_name="timeline_premiere.xml"
+            )
+        out_path = os.path.join(sdir, "timeline.fcpxml")
+        tl = build_timeline(state["report_json_path"], state["media_dir"], fps=fps)
+        export_timeline(tl, out_path)
+        return send_file(out_path, as_attachment=True, download_name="timeline.fcpxml")
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/api/switches", methods=["POST"])
+def analyze_switches_route():
+    """Generate camera switch rough cut using ASD pipeline."""
+    data = request.get_json(force=True)
+    session_id = data.get("session_id")
+    state = SESSIONS.get(session_id)
+    if not state or not state.get("report_json_path"):
+        return jsonify({"error": "Run sync analysis first."}), 400
+
+    try:
+        results = state["report_results"]
+        all_signals = state.get("all_signals", [])
+        fs = state.get("fs", 16000)
+
+        if not all_signals:
+            return jsonify({"error": "No audio signals cached. Please re-run sync."}), 400
+
+        sources_data = {}
+        for i, r in enumerate(results):
+            if i < len(all_signals):
+                sources_data[r["source"]] = {
+                    "signal": all_signals[i],
+                    "offset_sec": r["offset_sec"],
+                    "file": r["file"],
+                }
+
+        segments = generate_active_speaker_roughcut(sources_data, fs=fs)
+        if not segments:
+            return jsonify({"segments": [], "message": "No camera switches detected."})
+
+        state["last_switches"] = segments
+        state["last_switches_media_dir"] = state["media_dir"]
+
+        sdir = session_dir(session_id)
+        switches_path = os.path.join(sdir, "camera_switches.json")
+        with open(switches_path, "w") as f:
+            json.dump(segments, f, indent=2)
+
+        return jsonify({"segments": segments})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/api/export/switch-timeline", methods=["POST"])
+def export_switch_timeline_route():
+    """Export rough cut FCPXML."""
+    data = request.get_json(force=True)
+    session_id = data.get("session_id")
+    fps = float(data.get("fps", 25))
+    state = SESSIONS.get(session_id)
+    if not state or not state.get("last_switches"):
+        return jsonify({"error": "Run 'Suggest Camera Switches' first."}), 400
+
+    sdir = session_dir(session_id)
+    out_path = os.path.join(sdir, "rough_cut.fcpxml")
+    try:
+        export_roughcut_fcpxml(state["last_switches"], output_path=out_path, fps=fps)
+        return send_file(out_path, as_attachment=True, download_name="rough_cut.fcpxml")
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500

@@ -11,11 +11,11 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import numpy as np
 
-from confidence import badge_and_status_from_confidence
-from extract import extract_audio
-from sync_engine import load_wav, solve_multi_source_sync
-from drift import windowed_offsets, analyze_drift
-from timeline_builder import build_timeline, export_timeline
+from synccut.core.confidence import badge_and_status_from_confidence
+from synccut.media.extract import extract_audio
+from synccut.core.sync_engine import load_wav, solve_multi_source_sync
+from synccut.core.drift import windowed_offsets, analyze_drift
+from synccut.export.timeline_builder import build_timeline, export_timeline
 
 
 class WaveformCanvas(tk.Canvas):
@@ -370,6 +370,10 @@ class SyncCutTkinterApp(tk.Tk):
             messagebox.showinfo("Exported", f"PDF report saved to {path}")
 
 
-if __name__ == "__main__":
+def main():
     app = SyncCutTkinterApp()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

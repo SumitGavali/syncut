@@ -21,4 +21,4 @@ EXPOSE 7860
 
 # ONE worker: SESSIONS is an in-memory dict, so multiple workers
 # would each have their own copy and break the sync -> export flow.
-CMD gunicorn app:app --bind 0.0.0.0:7860 --timeout 600 --workers 1 --threads 4
+CMD gunicorn "synccut.api.factory:create_app()" --bind 0.0.0.0:7860 --timeout 600 --workers 1 --threads 4

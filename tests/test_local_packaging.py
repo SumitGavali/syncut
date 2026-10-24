@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 import pytest
 
-from paths import (
+from synccut.paths import (
     get_base_dir,
     get_user_data_dir,
     get_sessions_dir,
@@ -17,7 +17,7 @@ from paths import (
     get_ffprobe_path,
     cleanup_old_temp_files,
 )
-from app import find_free_port
+from synccut.api.factory import find_free_port
 
 
 def test_user_data_dir_resolution():

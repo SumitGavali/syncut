@@ -5,7 +5,7 @@ This is the common format every downstream sync step assumes.
 import subprocess
 import os
 
-from paths import get_ffmpeg_path, get_ffprobe_path
+from synccut.paths import get_ffmpeg_path, get_ffprobe_path
 
 TARGET_SR = 16000  # 16kHz mono is plenty for timing correlation (Module 5 reasoning)
 

@@ -5,7 +5,7 @@ long recordings, non-overlapping media, and corruption.
 """
 import os
 import numpy as np
-from config import MIN_AUDIO_ENERGY_DB, CLIPPING_THRESHOLD_RATIO, MAX_SILENCE_RATIO
+from synccut.config import MIN_AUDIO_ENERGY_DB, CLIPPING_THRESHOLD_RATIO, MAX_SILENCE_RATIO
 
 
 class RobustnessError(Exception):

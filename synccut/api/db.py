@@ -2,7 +2,7 @@ import sqlite3
 import os
 from pathlib import Path
 
-from paths import get_user_data_dir
+from synccut.paths import get_user_data_dir
 
 _DB_PATH = None
 

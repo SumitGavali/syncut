@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from config import (
+from synccut.config import (
     CONFIDENCE_GREEN_THRESHOLD,
     CONFIDENCE_YELLOW_THRESHOLD,
     REVIEW_REQUIRED_THRESHOLD,

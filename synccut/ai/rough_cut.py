@@ -8,7 +8,7 @@ import os
 import numpy as np
 import xml.etree.ElementTree as ET
 
-from config import MIN_SHOT_DURATION_SEC, SWITCH_WINDOW_SEC
+from synccut.config import MIN_SHOT_DURATION_SEC, SWITCH_WINDOW_SEC
 
 
 class ActiveSpeakerDetectorInterface:

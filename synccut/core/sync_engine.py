@@ -6,8 +6,8 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.optimize import least_squares
 
-from confidence import extract_correlation_features, compute_heuristic_confidence
-from config import TARGET_SR, MAX_TAU_SEC, ROBUST_LOSS, RANSAC_ENABLE, RANSAC_THRESHOLD_SEC
+from synccut.core.confidence import extract_correlation_features, compute_heuristic_confidence
+from synccut.config import TARGET_SR, MAX_TAU_SEC, ROBUST_LOSS, RANSAC_ENABLE, RANSAC_THRESHOLD_SEC
 
 
 def load_wav(path):

@@ -14,8 +14,8 @@ the library/event wrapper and the <audio> component patches.
 import json
 import os
 import opentimelineio as otio
-from extract import get_duration
-from timeline_builder import export_timeline  # reuse the verified, patched export
+from synccut.media.extract import get_duration
+from synccut.export.timeline_builder import export_timeline  # reuse the verified, patched export
 
 
 def build_switch_timeline(switches_path, media_dir, fps=25.0, name="synccut_rough_cut"):

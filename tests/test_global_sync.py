@@ -3,7 +3,7 @@ test_global_sync.py — Unit tests for Phase 1 global multi-source solver.
 """
 import pytest
 import numpy as np
-from sync_engine import global_sync_solver, solve_multi_source_sync
+from synccut.core.sync_engine import global_sync_solver, solve_multi_source_sync
 
 
 def test_global_sync_solver_ideal_triplet():

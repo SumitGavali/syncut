@@ -4,7 +4,7 @@ test_failure_cases.py — Unit tests for Phase 4 failure mode detection and robu
 import pytest
 import numpy as np
 import os
-from robustness import (
+from synccut.core.robustness import (
     check_file_readable,
     analyze_audio_quality,
     check_sample_rates,
@@ -59,7 +59,7 @@ def test_no_overlap_detection():
 
 
 def test_more_than_4_cameras_support():
-    from sync_engine import solve_multi_source_sync
+    from synccut.core.sync_engine import solve_multi_source_sync
     fs = 8000
     t = np.linspace(0, 2.0, int(fs * 2.0))
     base_sig = np.sin(2 * np.pi * 440 * t)

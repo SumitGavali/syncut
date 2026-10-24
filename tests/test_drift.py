@@ -3,7 +3,7 @@ test_drift.py — Unit tests for Phase 3 drift estimation and signal resampling 
 """
 import pytest
 import numpy as np
-from drift import analyze_drift, correct_audio_drift_resample, generate_piecewise_drift_offsets
+from synccut.core.drift import analyze_drift, correct_audio_drift_resample, generate_piecewise_drift_offsets
 
 
 def test_analyze_drift_linear_synthetic():

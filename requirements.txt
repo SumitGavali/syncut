@@ -1,8 +1,9 @@
 flask
+flask-cors
 numpy
 scipy
 scikit-learn
 matplotlib
 opentimelineio
 gunicorn
-flask-cors
+platformdirs

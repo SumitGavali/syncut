@@ -11,8 +11,8 @@ trim-in logic as timeline_builder.py's sync alignment.
 import json
 import os
 import numpy as np
-from extract import extract_audio
-from sync_engine import load_wav
+from synccut.media.extract import extract_audio
+from synccut.core.sync_engine import load_wav
 
 
 def _compute_trim_in(offset_sec, max_offset):

@@ -19,9 +19,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from confidence import extract_correlation_features, compute_ece, compute_auc, CalibratedConfidenceScorer
-from drift import windowed_offsets, analyze_drift
-from sync_engine import solve_multi_source_sync
+from synccut.core.confidence import extract_correlation_features, compute_ece, compute_auc, CalibratedConfidenceScorer
+from synccut.core.drift import windowed_offsets, analyze_drift
+from synccut.core.sync_engine import solve_multi_source_sync
 
 
 class DatasetLoader:

@@ -17,10 +17,11 @@ APP_AUTHOR = "SyncCut"
 
 
 def get_base_dir() -> Path:
-    """Return the application base directory (frozen bundle or dev root)."""
+    """Return the application base directory (frozen bundle or repo root)."""
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS)
-    return Path(__file__).resolve().parent
+    # synccut/paths.py -> synccut/ -> repository root
+    return Path(__file__).resolve().parent.parent
 
 
 def get_user_data_dir() -> Path:
@@ -64,10 +65,12 @@ def resolve_binary(binary_name: str) -> str:
 
     # 1. Bundled in frozen app _MEIPASS or dev root
     base = get_base_dir()
+    package_dir = Path(__file__).resolve().parent
     candidates = [
         base / target,
         base / "bin" / target,
         base / "ffmpeg_bin" / target,
+        package_dir / "media" / "ffmpeg_bin" / target,
         Path(sys.executable).parent / target,
         Path(sys.executable).parent / "bin" / target,
     ]
