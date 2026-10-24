@@ -21,10 +21,15 @@ import csv
 import io
 import json
 import os
+import threading
+import time
 import traceback
 import uuid
+import webbrowser
 
 from flask import Flask, request, jsonify, send_file, render_template
+import job_manager, db
+# from synccut import job_manager, db
 from flask_cors import CORS   
 from werkzeug.utils import secure_filename
 
@@ -34,14 +39,21 @@ from drift import windowed_offsets, analyze_drift, correct_audio_drift_resample
 from extract import extract_audio, extract_audio_batch
 from robustness import preflight_media_check, check_sample_rates
 from rough_cut import generate_active_speaker_roughcut, export_roughcut_fcpxml
+from fcp7_exporter import export_fcp7_xml
 from sync_engine import load_wav, solve_multi_source_sync
 from timeline_builder import build_timeline, export_timeline
 from export_switch_timeline import build_switch_timeline
-from fcp7_exporter import export_fcp7_xml
+from paths import (
+    get_base_dir,
+    get_user_data_dir,
+    get_sessions_dir,
+    get_audio_cache_dir,
+    cleanup_old_temp_files,
+)
 
-APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_ROOT = os.path.join(APP_ROOT, "uploads")
-os.makedirs(UPLOAD_ROOT, exist_ok=True)
+APP_ROOT = str(get_base_dir())
+UPLOAD_ROOT = str(get_sessions_dir())
+cleanup_old_temp_files(max_age_hours=24.0)
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": [
@@ -291,6 +303,87 @@ def download_report_json():
         return jsonify({"error": "No report available for this session."}), 400
     return send_file(state["report_json_path"], as_attachment=True, download_name="sync_report.json")
 
+# ---------------------------------------------------
+# New endpoint: Pre‑flight diagnostics for uploaded media
+# ---------------------------------------------------
+@app.route("/api/preflight", methods=["POST"]) 
+def preflight_diagnostics():
+    """Run robustness checks on each uploaded file and return a JSON report.
+    Expects the same multipart form as /api/sync (reference + inputs).
+    """
+    # Grab files without performing sync logic
+    reference_file = request.files.get("reference")
+    input_files = request.files.getlist("inputs")
+    if not reference_file:
+        return jsonify({"error": "Reference file required for diagnostics."}), 400
+    files = [("reference", reference_file)] + [(f"input_{i}", f) for i, f in enumerate(input_files)]
+    results = []
+    for label, f in files:
+        fname = secure_filename(f.filename)
+        temp_path = os.path.join(get_sessions_dir(), "tmp_diag", fname)
+        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+        f.save(temp_path)
+        # Load wav if possible for deeper analysis
+        try:
+            sr, sig = load_wav(temp_path)
+        except Exception:
+            sr, sig = None, None
+        ok, flags = preflight_media_check(temp_path, sig, sr)
+        results.append({"label": label, "file": fname, "valid": ok, "flags": flags})
+        os.remove(temp_path)
+    return jsonify({"diagnostics": results})
+
+# ---------------------------------------------------
+# New endpoint: Review / manual offset adjustment
+# ---------------------------------------------------
+@app.route("/api/review", methods=["POST"]) 
+def review_offsets():
+    data = request.get_json(force=True)
+    session_id = data.get("session_id")
+    adjustments = data.get("adjustments", {})  # {"Camera 1": offset_sec, ...}
+    state = SESSIONS.get(session_id)
+    if not state:
+        return jsonify({"error": "Invalid session_id"}), 400
+    # Apply adjustments to stored results
+    for r in state.get("report_results", []):
+        label = r.get("source")
+        if label in adjustments:
+            r["offset_sec"] = float(adjustments[label])
+            r["status"] = "Manually adjusted"
+    # Persist updated report
+    report_path = state.get("report_json_path")
+    if report_path:
+        with open(report_path, "w") as f:
+            json.dump(state["report_results"], f, indent=2)
+    return jsonify({"status": "adjustments applied", "results": state["report_results"]})
+
+# ---------------------------------------------------
+# New endpoint: Async sync job submission
+# ---------------------------------------------------
+@app.route("/api/sync_async", methods=["POST"]) 
+def run_sync_async():
+    # Accept same payload as /api/sync but execute in background
+    session_id = request.form.get("session_id")
+    if not session_id:
+        return jsonify({"error": "Missing session_id"}), 400
+    # Store raw request data for background processing
+    payload = request.form.to_dict(flat=False)
+    files = request.files
+    job_id = job_manager.submit_job(session_id, payload, files)
+    return jsonify({"job_id": job_id})
+
+# ---------------------------------------------------
+# New endpoint: Job status query
+# ---------------------------------------------------
+@app.route("/api/job/status", methods=["GET"]) 
+def job_status():
+    job_id = request.args.get("job_id")
+    status = job_manager.get_status(job_id)
+    if status is None:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(status)
+
+
 
 @app.route("/api/report/csv", methods=["GET"])
 def download_report_csv():
@@ -419,9 +512,37 @@ def export_switch_timeline_route():
         return jsonify({"error": str(e)}), 500
 
 
+def find_free_port(preferred: int = 5000) -> int:
+    """Find a free port starting from preferred, or let OS pick one."""
+    import socket
+    # Try preferred first
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("127.0.0.1", preferred))
+            return preferred
+        except OSError:
+            pass
+
+    # Ask OS for an ephemeral free port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # Initialize SQLite DB for session tracking
+    db.init_db()
+    # Start background job executor
+    job_manager.start_executor()
+
+    host = "127.0.0.1"
+    port = find_free_port(5000)
+    url = f"http://{host}:{port}/app"
+    # Open browser automatically
+    threading.Thread(target=lambda: (time.sleep(1.2), webbrowser.open(url)), daemon=True).start()
+    print(f"SyncCut Desktop running at {url}")
+    app.run(host=host, port=port, debug=False)
 
 
 

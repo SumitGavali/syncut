@@ -5,6 +5,8 @@ This is the common format every downstream sync step assumes.
 import subprocess
 import os
 
+from paths import get_ffmpeg_path, get_ffprobe_path
+
 TARGET_SR = 16000  # 16kHz mono is plenty for timing correlation (Module 5 reasoning)
 
 def extract_audio(input_path, output_dir="_audio_cache"):
@@ -25,7 +27,7 @@ def extract_audio(input_path, output_dir="_audio_cache"):
             pass
 
     cmd = [
-        "ffmpeg", "-y", "-i", input_path,
+        get_ffmpeg_path(), "-y", "-i", input_path,
         "-vn",                # no video
         "-ac", "1",           # mono
         "-ar", str(TARGET_SR),# 16kHz
@@ -57,7 +59,7 @@ def extract_audio_batch(input_paths, output_dir="_audio_cache", max_workers=None
 def get_duration(input_path):
     """Returns duration in seconds using ffprobe."""
     cmd = [
-        "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+        get_ffprobe_path(), "-v", "quiet", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", input_path
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)

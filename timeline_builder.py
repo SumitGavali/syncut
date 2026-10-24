@@ -73,8 +73,9 @@ def build_timeline(report_path, media_dir, fps=25.0, name="synccut_timeline"):
 
 def get_audio_info(file_path):
     """Returns (has_audio, channels, sample_rate) via ffprobe."""
+    from paths import get_ffprobe_path
     cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "a:0",
+        get_ffprobe_path(), "-v", "error", "-select_streams", "a:0",
         "-show_entries", "stream=channels,sample_rate",
         "-of", "default=noprint_wrappers=1", file_path
     ]
