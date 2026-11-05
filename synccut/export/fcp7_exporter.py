@@ -60,9 +60,28 @@ def build_xmeml_xml(report_path: str, media_dir: str, fps: float = 25.0, sequenc
       to guarantee frame boundaries match between video and audio track sync.
     """
     with open(report_path, "r", encoding="utf-8") as f:
-        results = json.load(f)
+        report = json.load(f)
+    if isinstance(report, dict):
+        cameras = report.get("cameras", {})
+        results = [
+            {
+                **row,
+                "offset_s": cameras.get(row.get("source"), {}).get(
+                    "offset_s", row.get("offset_s", row.get("offset_sec"))
+                ),
+                "drift_ppm": cameras.get(row.get("source"), {}).get(
+                    "drift_ppm", row.get("drift_ppm", 0.0)
+                ),
+            }
+            for row in report.get("results", [])
+        ]
+    else:
+        results = [
+            {**row, "offset_s": row.get("offset_s", row.get("offset_sec")), "drift_ppm": row.get("drift_ppm", 0.0)}
+            for row in report
+        ]
 
-    valid = [r for r in results if r.get("offset_sec") is not None]
+    valid = [r for r in results if r.get("offset_s") is not None]
     if not valid:
         raise ValueError("No valid synced sources in report — nothing to build.")
 
@@ -71,7 +90,7 @@ def build_xmeml_xml(report_path: str, media_dir: str, fps: float = 25.0, sequenc
     # In SyncCut, offset_sec is relative to reference (or global alignment).
     # Positive offset means camera started after reference; negative means camera started before reference.
     # To place all clips on a non-negative timeline where t=0 corresponds to the earliest source start:
-    max_offset = max(r["offset_sec"] for r in valid)
+    max_offset = max(r["offset_s"] for r in valid)
 
     # Prepare clip track data
     sources_to_place = []
@@ -97,7 +116,7 @@ def build_xmeml_xml(report_path: str, media_dir: str, fps: float = 25.0, sequenc
 
         # In-point trim and timeline placement:
         # Align earliest clip to timeline frame 0.
-        trim_in_sec = max(0.0, max_offset - r["offset_sec"])
+        trim_in_sec = max(0.0, max_offset - r["offset_s"])
         remaining_sec = duration_sec - trim_in_sec
         if remaining_sec <= 0:
             continue
@@ -141,6 +160,8 @@ def build_xmeml_xml(report_path: str, media_dir: str, fps: float = 25.0, sequenc
             "has_audio": has_audio,
             "audio_channels": channels or 2,
             "audio_rate": sample_rate or 48000
+            ,"offset_s": r["offset_s"]
+            ,"drift_ppm": r.get("drift_ppm", 0.0)
         })
 
     if not sources_to_place:
@@ -208,6 +229,10 @@ def build_xmeml_xml(report_path: str, media_dir: str, fps: float = 25.0, sequenc
 
         cname = ET.SubElement(clipitem, "name")
         cname.text = f"{cam['source_label']} - {cam['filename']}"
+        logging_info = ET.SubElement(clipitem, "logginginfo")
+        ET.SubElement(logging_info, "description").text = (
+            f"SyncCut offset_s={cam['offset_s']:.9f}; drift_ppm={cam['drift_ppm']:.6f}"
+        )
 
         cdur = ET.SubElement(clipitem, "duration")
         cdur.text = str(cam["duration_frames"])

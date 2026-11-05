@@ -1,15 +1,32 @@
-uploads/
-_audio_cache/
+# Python
 __pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
 .pytest_cache/
-*.pyc
-*.pyo
-.env
+.flask_secret_key
+
+# Node / React
+node_modules/
+dist/
+build/
+.vite/
+npm-debug.log*
+
+# Media & Data (CRITICAL - DO NOT COMMIT VIDEOS OR MODELS)
+data/
+uploads/
 *.mp4
 *.mov
-*.wav
 *.mkv
+*.wav
 ffmpeg_bin/
-build/
-dist/
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
 *.log

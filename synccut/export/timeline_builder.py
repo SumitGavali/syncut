@@ -13,38 +13,90 @@ import opentimelineio as otio
 from synccut.media.extract import get_duration
 
 
-def build_timeline(report_path, media_dir, fps=25.0, name="synccut_timeline"):
+def build_timeline(report_path, media_dir, fps=25.0, name="synccut_timeline", project=None):
     """Build an OTIO timeline from a sync report."""
     with open(report_path) as f:
-        results = json.load(f)
+        report = json.load(f)
+    if isinstance(report, dict):
+        results = report.get("results", [])
+        cameras = report.get("cameras", {})
+    else:
+        results = report
+        cameras = {}
+    results = [
+        {
+            **row,
+            "offset_s": cameras.get(row.get("source"), {}).get(
+                "offset_s", row.get("offset_s", row.get("offset_sec"))
+            ),
+            "drift_ppm": cameras.get(row.get("source"), {}).get(
+                "drift_ppm", row.get("drift_ppm", 0.0)
+            ),
+        }
+        for row in results
+    ]
+    project = project if isinstance(project, dict) else {}
+    project_cameras = {
+        row.get("source"): row
+        for row in project.get("cameras", [])
+        if isinstance(row, dict) and row.get("source")
+    }
+    cameras = {
+        **cameras,
+        **{
+            source: {
+                **cameras.get(source, {}),
+                "offset_s": row.get("offset_s", cameras.get(source, {}).get("offset_s")),
+            }
+            for source, row in project_cameras.items()
+        },
+    }
+    results = [
+        {
+            **row,
+            "offset_s": project_cameras.get(row.get("source"), {}).get(
+                "offset_s", row.get("offset_s")
+            ),
+        }
+        for row in results
+    ]
 
     timeline = otio.schema.Timeline(name=name)
+    timeline.global_start_time = otio.opentime.RationalTime(0, fps)
 
-    valid = [r for r in results if r.get("offset_sec") is not None]
+    valid = [r for r in results if r.get("offset_s") is not None]
     if not valid:
         raise ValueError("No valid synced sources in report — nothing to build.")
 
-    max_offset = max(r["offset_sec"] for r in valid)
+    timeline_origin = min(r["offset_s"] for r in valid)
+    timeline.metadata["synccut"] = {
+        "cameras": cameras,
+        "loop_error_s": report.get("loop_error_s", 0.0) if isinstance(report, dict) else 0.0,
+        "master_source": report.get("master_source") if isinstance(report, dict) else None,
+        "program": project.get("program", []),
+    }
 
+    media_by_source = {}
     for r in valid:
         file_path = os.path.join(media_dir, r["file"])
         if not os.path.exists(file_path):
             print(f"  WARNING: {file_path} not found, skipping track for {r['source']}")
             continue
 
-        if r["status"].startswith("FAILED") or r["confidence"] < 0.15:
-            print(f"  SKIPPING {r['source']} — status: {r['status']} (below confidence threshold, needs manual review)")
+        duration_sec = float(r.get("duration_sec") or get_duration(file_path))
+        if duration_sec <= 0:
             continue
 
-        track = otio.schema.Track(name=r["source"], kind=otio.schema.TrackKind.Video)
+        track = otio.schema.Track(
+            name=r["source"], 
+            kind=otio.schema.TrackKind.Video,
+            source_range=otio.opentime.TimeRange(
+                start_time=otio.opentime.RationalTime(0, fps),
+                duration=otio.opentime.RationalTime(round(duration_sec * fps), fps)
+            )
+        )
 
-        duration_sec = get_duration(file_path)
-        trim_in_sec = max(0.0, max_offset - r["offset_sec"])
-        remaining_duration = duration_sec - trim_in_sec
-
-        if remaining_duration <= 0:
-            print(f"  WARNING: {r['source']} too short after trim, skipping")
-            continue
+        timeline_start_sec = max(0.0, r["offset_s"] - timeline_origin)
 
         media_ref = otio.schema.ExternalReference(
             target_url=Path(file_path).resolve().as_uri(),
@@ -54,19 +106,97 @@ def build_timeline(report_path, media_dir, fps=25.0, name="synccut_timeline"):
             )
         )
 
+        if timeline_start_sec > 0:
+            track.append(otio.schema.Gap(
+                source_range=otio.opentime.TimeRange(
+                    start_time=otio.opentime.RationalTime(0, fps),
+                    duration=otio.opentime.RationalTime(round(timeline_start_sec * fps), fps),
+                )
+            ))
         clip = otio.schema.Clip(
             name=r["file"],
             media_reference=media_ref,
             source_range=otio.opentime.TimeRange(
-                start_time=otio.opentime.RationalTime(round(trim_in_sec * fps), fps),
-                duration=otio.opentime.RationalTime(round(remaining_duration * fps), fps)
-            )
+                start_time=otio.opentime.RationalTime(0, fps),
+                duration=otio.opentime.RationalTime(round(duration_sec * fps), fps)
+            ),
         )
+        clip.metadata["synccut"] = {
+            "offset_s": r["offset_s"],
+            "drift_ppm": r.get("drift_ppm", 0.0),
+            "state": r.get("state", "VERIFY"),
+            "psr": r.get("psr"),
+        }
         track.append(clip)
         timeline.tracks.append(track)
+        media_by_source[r["source"]] = (r, file_path, duration_sec, media_ref)
 
-        conf_pct = round(r["confidence"] * 100)
-        print(f"  {r['source']}: trimmed {trim_in_sec:.3f}s in, confidence {conf_pct}%, status: {r['status']}")
+    program = project.get("program", [])
+    if program:
+        program_track = otio.schema.Track(
+            name="PROGRAM",
+            kind=otio.schema.TrackKind.Video,
+            source_range=otio.opentime.TimeRange(
+                start_time=otio.opentime.RationalTime(0, fps),
+                duration=otio.opentime.RationalTime(0, fps)
+            )
+        )
+        cursor = 0.0
+        
+        first_segment = sorted(program, key=lambda item: float(item.get("start", 0)))[0]
+        first_start = max(0.0, float(first_segment.get("start", 0)) - timeline_origin)
+        
+        if first_start > 0:
+            program_track.append(otio.schema.Gap(
+                source_range=otio.opentime.TimeRange(
+                    start_time=otio.opentime.RationalTime(0, fps),
+                    duration=otio.opentime.RationalTime(round(first_start * fps), fps),
+                )
+            ))
+            cursor = first_start
+
+        for segment in sorted(program, key=lambda item: float(item.get("start", 0))):
+            source = media_by_source.get(segment.get("camera"))
+            if not source:
+                continue
+            row, file_path, source_duration, media_ref = source
+            start = max(float(segment.get("start", 0)), float(row["offset_s"]))
+            end = min(float(segment.get("end", start)), float(row["offset_s"]) + source_duration)
+            if end <= start:
+                continue
+            timeline_start = max(0.0, start - timeline_origin)
+            timeline_end = max(timeline_start, end - timeline_origin)
+            
+            if timeline_start > cursor:
+                program_track.append(otio.schema.Gap(
+                    source_range=otio.opentime.TimeRange(
+                        start_time=otio.opentime.RationalTime(0, fps),
+                        duration=otio.opentime.RationalTime(round((timeline_start - cursor) * fps), fps),
+                    )
+                ))
+            clip = otio.schema.Clip(
+                name=f"{segment.get('camera', 'Camera')} — {segment.get('reason', 'Program cut')}",
+                media_reference=media_ref,
+                source_range=otio.opentime.TimeRange(
+                    start_time=otio.opentime.RationalTime(round((start - row["offset_s"]) * fps), fps),
+                    duration=otio.opentime.RationalTime(round((end - start) * fps), fps),
+                ),
+            )
+            clip.metadata["synccut"] = {
+                "camera": segment.get("camera"),
+                "reason": segment.get("reason"),
+                "source": segment.get("source", "manual"),
+                "offset_s": row["offset_s"],
+            }
+            program_track.append(clip)
+            cursor = timeline_end
+
+        if len(program_track):
+            program_track.source_range = otio.opentime.TimeRange(
+                start_time=otio.opentime.RationalTime(0, fps),
+                duration=otio.opentime.RationalTime(round(cursor * fps), fps)
+            )
+            timeline.tracks.append(program_track)
 
     return timeline
 
@@ -104,7 +234,7 @@ def export_timeline(timeline, output_path):
 
     if output_path.lower().endswith(".fcpxml"):
         _fix_asset_audio_attributes(output_path)
-        _add_audio_components(output_path)   # FIXED: now correctly maps Asset ID -> Channels
+        _add_audio_components(output_path)
         _wrap_with_library_event(output_path)
 
     print(f"\nExported: {output_path}")
@@ -113,10 +243,6 @@ def export_timeline(timeline, output_path):
 # ---------- PATCH FUNCTIONS ----------
 
 def _fix_asset_audio_attributes(fcpxml_path):
-    """
-    For each <asset>, read the actual source file and add/update:
-        audioSources="1" audioChannels="X" audioRate="Y"
-    """
     with open(fcpxml_path, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -157,26 +283,15 @@ def _fix_asset_audio_attributes(fcpxml_path):
 
 
 def _add_audio_components(fcpxml_path):
-    """
-    FIXED: Now properly maps Asset ID -> audioChannels.
-    For each <video> tag, looks up the asset ID to get channel count,
-    and adds a matching <audio> sibling with audioChannelSource.
-    """
     with open(fcpxml_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # --- STEP 1: Build a map of Asset ID -> Channel Count ---
     asset_channels = {}
-    # Find all asset tags that have an 'id' and 'audioChannels'
     for match in re.finditer(r'<asset\b[^>]*id="([^"]+)"[^>]*audioChannels="([^"]+)"[^>]*/>', content):
         asset_id = match.group(1)
         channels = int(match.group(2))
         asset_channels[asset_id] = channels
 
-    # If for some reason audioChannels is missing in the asset tag (shouldn't happen after _fix_asset),
-    # we fall back to probing, but we'll rely on the tag to avoid redundant ffprobe calls.
-
-    # --- STEP 2: Replace each <video> with <video> + <audio> ---
     def add_audio_sibling(match):
         video_tag = match.group(0)
         ref_match = re.search(r'ref="([^"]+)"', video_tag)
@@ -186,23 +301,19 @@ def _add_audio_components(fcpxml_path):
         asset_id = ref_match.group(1)
         channels = asset_channels.get(asset_id, 0)
 
-        # If this asset has no audio, just return the video tag unchanged
         if channels == 0:
             return video_tag
 
-        # Extract offset and duration from the video tag
         offset_match = re.search(r'offset="([^"]+)"', video_tag)
         offset = offset_match.group(1) if offset_match else "0s"
         duration_match = re.search(r'duration="([^"]+)"', video_tag)
         duration = duration_match.group(1) if duration_match else "0s"
 
-        # Build the audioChannelSource string: e.g., "1" for mono, "1,2" for stereo, "1,2,3,4" for quad
         channel_source = ",".join(str(i) for i in range(1, channels + 1))
 
         audio_tag = f'<audio offset="{offset}" ref="{asset_id}" duration="{duration}" audioChannelSource="{channel_source}" role="dialogue"/>'
         return f"{video_tag}\n                    {audio_tag}"
 
-    # Apply the replacement to all self-closing video tags
     content = re.sub(r'<video\b[^>]*/>', add_audio_sibling, content)
 
     with open(fcpxml_path, "w", encoding="utf-8") as f:
@@ -212,7 +323,6 @@ def _add_audio_components(fcpxml_path):
 
 
 def _wrap_with_library_event(fcpxml_path):
-    """Wrap <project> in <library>/<event> for Resolve."""
     with open(fcpxml_path, "r", encoding="utf-8") as f:
         content = f.read()
 

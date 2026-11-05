@@ -43,6 +43,7 @@ Then open **http://localhost:5000**
 - `POST /api/session` — new session
 - `POST /api/sync` — reference + inputs → sync report
 - `GET  /api/report/download` — download sync_report.json
+- `GET  /api/session/<session_id>/thumbnail/<index>?time=<seconds>` — authenticated, cached video frame for the editor filmstrip
 - `POST /api/export/timeline` — export synced multi-track FCPXML
 - `POST /api/switches` — offset-aligned camera switch suggestions
 - `POST /api/export/switch-timeline` — export rough-cut FCPXML

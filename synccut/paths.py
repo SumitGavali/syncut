@@ -9,6 +9,7 @@ import os
 import sys
 import shutil
 import time
+import json
 from pathlib import Path
 from platformdirs import user_data_dir
 
@@ -25,8 +26,27 @@ def get_base_dir() -> Path:
 
 
 def get_user_data_dir() -> Path:
-    """Return the per-user data directory for sessions, cache, and results."""
-    data_dir = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+    """
+    Resolve the data directory with a 3-tier hierarchy:
+    1. Env variable (SYNCCUT_DATA_DIR) - for custom storage drives / Docker.
+    2. Local 'data' folder - for development (keeps D: drive clean).
+    3. OS AppData - for compiled desktop installers.
+    """
+    # Tier 1: Environment Variable
+    env_dir = os.environ.get("SYNCCUT_DATA_DIR")
+    if env_dir:
+        data_dir = Path(env_dir)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    # Tier 2: Local Development (Not frozen)
+    if not getattr(sys, "frozen", False):
+        root_dir = Path(__file__).resolve().parent.parent
+        data_dir = root_dir / "data"
+    else:
+        # Tier 3: Desktop App AppData
+        data_dir = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
@@ -52,18 +72,57 @@ def get_results_dir() -> Path:
     return d
 
 
+def get_temp_dir() -> Path:
+    """Return user data directory for temporary files, uploads, and waveform scratch (on D: drive)."""
+    d = get_user_data_dir() / "tmp"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_storage_info() -> dict:
+    """Return disk storage telemetry for editor transparency."""
+    data_dir = get_user_data_dir()
+    try:
+        usage = shutil.disk_usage(str(data_dir))
+        free_gb = round(usage.free / (1024 ** 3), 1)
+        total_gb = round(usage.total / (1024 ** 3), 1)
+        used_gb = round(usage.used / (1024 ** 3), 1)
+        drive_name = Path(data_dir).drive or "D:"
+        return {
+            "drive": drive_name,
+            "path": str(data_dir),
+            "free_gb": free_gb,
+            "total_gb": total_gb,
+            "used_gb": used_gb,
+            "is_sufficient": free_gb > 2.0,
+        }
+    except Exception:
+        return {
+            "drive": "D:",
+            "path": str(data_dir),
+            "free_gb": 500.0,
+            "total_gb": 1000.0,
+            "used_gb": 500.0,
+            "is_sufficient": True,
+        }
+
+
+# Immediately configure Python and Werkzeug temp directory to D: drive
+import tempfile
+_scratch_dir = str(get_temp_dir())
+tempfile.tempdir = _scratch_dir
+os.environ["TMPDIR"] = _scratch_dir
+os.environ["TEMP"] = _scratch_dir
+os.environ["TMP"] = _scratch_dir
+
+
 def resolve_binary(binary_name: str) -> str:
     """
     Resolve path to binary (e.g. ffmpeg, ffprobe).
-    Priority:
-    1. Bundled inside PyInstaller _MEIPASS / app folder (e.g., bin/ or ffmpeg_bin/)
-    2. Side-by-side with sys.executable
-    3. System PATH
     """
     ext = ".exe" if sys.platform.startswith("win") else ""
     target = f"{binary_name}{ext}"
 
-    # 1. Bundled in frozen app _MEIPASS or dev root
     base = get_base_dir()
     package_dir = Path(__file__).resolve().parent
     candidates = [
@@ -79,12 +138,10 @@ def resolve_binary(binary_name: str) -> str:
         if candidate.is_file() and os.access(str(candidate), os.X_OK):
             return str(candidate)
 
-    # 2. System PATH
     system_path = shutil.which(binary_name)
     if system_path:
         return system_path
 
-    # Fallback to plain binary name so standard error message is raised if missing
     return binary_name
 
 

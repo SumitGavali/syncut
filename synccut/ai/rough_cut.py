@@ -1,228 +1,328 @@
-"""
-rough_cut.py — Active Speaker Detection (ASD) interface & FCPXML rough cut exporter.
-Phase 5: Replaces energy-only heuristic with an ASD interface (TalkNet/Light-ASD adapter +
-fallback energy/spectral/diarization heuristic), global timeline alignment, shot duration constraints, and FCPXML export.
-"""
-import json
 import os
+import subprocess
+import logging
+from typing import Dict, List, Any
+
+import cv2
 import numpy as np
-import xml.etree.ElementTree as ET
+import librosa
 
-from synccut.config import MIN_SHOT_DURATION_SEC, SWITCH_WINDOW_SEC
+from synccut.ai.face_tracker import ActiveSpeakerDetector
+from synccut.config import MIN_SHOT_DURATION_SEC
+
+logger = logging.getLogger(__name__)
+
+# WHY: If histogram difference is > 0.4, it's a hard cut / motion blur.
+SHOT_BOUNDARY_THRESHOLD = 0.4
+SPEAKER_CONFIDENCE_THRESHOLD = 0.3
+SPEAKER_SWITCH_MARGIN = 0.15
+SPEAKER_SWITCH_CONFIRMATION_STEPS = 2
+
+# Face detection runs on a downscaled copy of each frame (much faster on CPU).
+DETECT_WIDTH = 640
+# Light-ASD expects 25 video frames and 100 MFCC frames per window.
+ASD_FPS = 25.0
+MFCC_HOP = 160  # 16000 Hz / 100 MFCC frames per second
 
 
-class ActiveSpeakerDetectorInterface:
-    """Abstract interface for Active Speaker Detection (ASD)."""
-
-    def predict_speaker_activity(self, audio_signal, fs, frame_sec=0.5):
-        raise NotImplementedError
-
-
-class FallbackEnergyDiarizationASD(ActiveSpeakerDetectorInterface):
+def calculate_frame_difference(frame1, frame2) -> float:
     """
-    Fallback ASD using energy + spectral flux + diarization-inspired variance smoothing.
+    WHY: We use Histograms instead of pixel-by-pixel comparison because
+    histograms are immune to slight camera shakes, but will spike
+    drastically on a hard cut or a flash.
     """
-
-    def predict_speaker_activity(self, audio_signal, fs, frame_sec=0.5):
-        win_samples = int(fs * frame_sec)
-        if win_samples <= 0 or len(audio_signal) < win_samples:
-            return np.array([])
-
-        num_frames = len(audio_signal) // win_samples
-        scores = []
-
-        for i in range(num_frames):
-            frame = audio_signal[i * win_samples : (i + 1) * win_samples]
-            rms = np.sqrt(np.mean(frame ** 2))
-            db = 20 * np.log10(rms + 1e-10)
-
-            # Spectral centroid for voice clarity heuristic
-            fft_mag = np.abs(np.fft.rfft(frame))
-            freqs = np.fft.rfftfreq(len(frame), d=1.0 / fs)
-            centroid = np.sum(freqs * fft_mag) / (np.sum(fft_mag) + 1e-10)
-
-            # Voice activity heuristic score: high energy in 300-3400 Hz range
-            voice_band_energy = np.sum(fft_mag[(freqs >= 300) & (freqs <= 3400)])
-            total_energy = np.sum(fft_mag) + 1e-10
-            vratio = voice_band_energy / total_energy
-
-            score = float(db + 20.0 * vratio)
-            scores.append(score)
-
-        return np.array(scores)
+    hist1 = cv2.calcHist([frame1], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    hist2 = cv2.calcHist([frame2], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    cv2.normalize(hist1, hist1, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+    cv2.normalize(hist2, hist2, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+    correlation = cv2.compareHist(hist1, hist2, cv2.HISTCMP_CORREL)
+    return 1.0 - correlation
 
 
-class TalkNetASDAdapter(ActiveSpeakerDetectorInterface):
-    """
-    Adapter wrapper for TalkNet / Light-ASD models (if PyTorch model available).
-    Falls back to FallbackEnergyDiarizationASD if weights or PyTorch are absent.
-    """
+def analyze_video_source(
+    file_path: str,
+    offset_sec: float,
+    detector: ActiveSpeakerDetector,
+    cancel_check=None,
+    progress_callback=None,
+) -> Dict[str, Any]:
+    cap = cv2.VideoCapture(file_path)
+    if not cap.isOpened():
+        logger.error(f"Could not open video: {file_path}")
+        return {"asd_scores": [], "shot_boundaries": []}
 
-    def __init__(self, model_path=None):
-        self.model_path = model_path
-        self.fallback = FallbackEnergyDiarizationASD()
+    video_fps = cap.get(cv2.CAP_PROP_FPS)
+    if video_fps == 0 or video_fps > 120:
+        video_fps = ASD_FPS
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
 
-    def predict_speaker_activity(self, audio_signal, fs, frame_sec=0.5):
-        # Stub for deep learning model; defaults cleanly to fallback
-        return self.fallback.predict_speaker_activity(audio_signal, fs, frame_sec=frame_sec)
+    # Extract full audio for this video to get MFCC features
+    temp_wav = f"temp_audio_{os.getpid()}_{abs(hash(file_path))}.wav"
+    try:
+        subprocess.run(
+            ['ffmpeg', '-y', '-i', file_path, '-vn', '-acodec', 'pcm_s16le',
+             '-ar', '16000', '-ac', '1', temp_wav],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        audio, sr = librosa.load(temp_wav, sr=16000)
+        # 100 MFCC frames per second -> 4 per video frame at 25 fps
+        mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13, hop_length=MFCC_HOP)
+        mfcc = mfcc.T  # (Time, 13)
+    except Exception as e:
+        logger.error(f"Audio extraction failed for {file_path}: {e}")
+        cap.release()
+        return {"asd_scores": [], "shot_boundaries": []}
+    finally:
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
+
+    asd_scores = []
+    shot_boundaries = []
+    frame_count = 0
+    frame_buffer = []
+    name = os.path.basename(file_path)
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        video_time = frame_count / video_fps
+        timeline_time = video_time + offset_sec
+
+        # Downscale BEFORE face detection: big speed-up on CPU.
+        h, w = frame.shape[:2]
+        if w > DETECT_WIDTH:
+            scale = DETECT_WIDTH / float(w)
+            small = cv2.resize(frame, (DETECT_WIDTH, int(h * scale)))
+        else:
+            small = frame
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        faces = detector.detect_faces(small)
+
+        face_crop = np.zeros((112, 112), dtype=np.uint8)
+        if len(faces) > 0:
+            (x, y, fw, fh) = max(faces, key=lambda f: f[2] * f[3])
+            crop = gray[y:y + fh, x:x + fw]
+            if crop.size > 0:
+                face_crop = cv2.resize(crop, (112, 112))
+
+        frame_buffer.append(face_crop)
+
+        if len(frame_buffer) == 25:
+            if cancel_check:
+                cancel_check()
+            if progress_callback:
+                # tasks.py finds the camera by looking for the basename in this text
+                progress_callback(frame_count, total_frames, f"Analyzing {name}")
+
+            # Audio window aligned to these 25 frames (4 MFCC steps per frame)
+            audio_start = max(0, (frame_count - 24) * 4)
+            audio_window = mfcc[audio_start:audio_start + 100]
+            if audio_window.shape[0] < 100:
+                pad = np.zeros((100 - audio_window.shape[0], 13))
+                audio_window = np.vstack((audio_window, pad)) if audio_window.size else pad
+
+            vis_input = np.expand_dims(np.array(frame_buffer), axis=0)  # (1, 25, 112, 112)
+            aud_input = np.expand_dims(audio_window, axis=0)            # (1, 100, 13)
+
+            probs = detector.predict_speaking_sequence(vis_input, aud_input)
+
+            for i, prob in enumerate(probs):
+                t = timeline_time - (24 - i) / video_fps
+                if t >= 0:
+                    asd_scores.append((t, float(prob)))
+
+            frame_buffer = []
+
+        frame_count += 1
+
+    cap.release()
+    return {"asd_scores": asd_scores, "shot_boundaries": shot_boundaries}
 
 
 def generate_active_speaker_roughcut(
-    sources_data,
-    fs=16000,
-    window_sec=SWITCH_WINDOW_SEC,
-    min_shot_sec=MIN_SHOT_DURATION_SEC,
-    asd_engine=None,
-):
+    sources_data: Dict[str, dict],
+    fs: int = 16000,
+    cancel_check=None,
+    progress_callback=None,
+) -> List[dict]:
     """
-    sources_data: dict of {source_label: {"signal": np.array, "offset_sec": float, "file": str}}
-    Operates on offset-aligned global timeline.
+    Iterates all cameras, finds who is talking, and generates segments.
+
+    sources_data format:
+    {"Camera A": {"file": "path/to/camA.mp4", "offset_sec": 0.0}, ...}
     """
-    if asd_engine is None:
-        asd_engine = FallbackEnergyDiarizationASD()
+    model_path = os.path.join(os.path.dirname(__file__), "models", "light_asd.onnx")
+    detector = ActiveSpeakerDetector(model_path)
 
-    if not sources_data:
+    all_asd_data = {}
+    all_boundaries = []
+
+    # --- PHASE 1: Analyze all videos ---
+    for cam_name, data in sources_data.items():
+        logger.info(f"Analyzing visual AI for {cam_name}...")
+        result = analyze_video_source(
+            file_path=data["file"],
+            offset_sec=data["offset_sec"],
+            detector=detector,
+            cancel_check=cancel_check,
+            progress_callback=progress_callback,
+        )
+        all_asd_data[cam_name] = result["asd_scores"]
+        all_boundaries.extend(result["shot_boundaries"])
+
+    # --- PHASE 2: Generate the Timeline (State Machine) ---
+    if not all_asd_data:
         return []
 
-    # Calculate global trim alignment
-    max_offset = max(s["offset_sec"] for s in sources_data.values())
-
-    aligned_scores = {}
-    aligned_files = {}
-
-    for label, info in sources_data.items():
-        sig = info["signal"]
-        offset = info["offset_sec"]
-        trim_sec = max_offset - offset
-        trim_samples = int(trim_sec * fs)
-
-        trimmed_sig = sig[trim_samples:] if trim_samples < len(sig) else np.array([])
-        scores = asd_engine.predict_speaker_activity(trimmed_sig, fs, frame_sec=window_sec)
-        aligned_scores[label] = scores
-        aligned_files[label] = info["file"]
-
-    if not aligned_scores:
+    all_times = [t for scores in all_asd_data.values() for t, _ in scores]
+    if not all_times:
         return []
+    start_time = min(all_times)
+    end_time = max(all_times)
 
-    num_windows = min(len(sc) for sc in aligned_scores.values())
-    if num_windows == 0:
-        return []
+    segments = []
+    current_camera = None
+    segment_start = start_time
+    pending_camera = None
+    pending_camera_steps = 0
+    confidence_totals = {}
+    confidence_counts = {}
 
-    per_window_winners = []
-    labels = list(aligned_scores.keys())
-
-    for i in range(num_windows):
-        best_label = None
-        best_score = -999.0
-        for label in labels:
-            sc = aligned_scores[label][i]
-            if sc > best_score:
-                best_score = sc
-                best_label = label
-
-        per_window_winners.append({
-            "time_sec": round(i * window_sec, 3),
-            "camera": best_label,
-            "score": round(best_score, 1),
-            "file": aligned_files[best_label],
+    def close_segment(end_t):
+        if current_camera is None or end_t <= segment_start:
+            return
+        count = confidence_counts.get(current_camera, 0)
+        mean_confidence = (
+            confidence_totals.get(current_camera, 0.0) / count if count else 0.0
+        )
+        segments.append({
+            "camera": current_camera,
+            "start": round(segment_start, 2),
+            "end": round(end_t, 2),
+            "confidence": round(mean_confidence, 4),
         })
 
-    # Merge consecutive same-camera windows
-    segments = []
-    for w in per_window_winners:
-        if segments and segments[-1]["camera"] == w["camera"]:
-            segments[-1]["end_sec"] = round(w["time_sec"] + window_sec, 3)
-            segments[-1]["_scores"].append(w["score"])
+    score_series = {}
+    for camera, scores in all_asd_data.items():
+        ordered = sorted(scores, key=lambda score: score[0])
+        score_series[camera] = (
+            np.asarray([score[0] for score in ordered], dtype=np.float64),
+            np.asarray([score[1] for score in ordered], dtype=np.float32),
+        )
+
+    def score_at(camera, at_time):
+        times, confidences = score_series[camera]
+        if not len(times):
+            return 0.0
+        index = int(np.searchsorted(times, at_time))
+        candidates = [i for i in (index - 1, index) if 0 <= i < len(times)]
+        if not candidates:
+            return 0.0
+        nearest = min(candidates, key=lambda i: abs(times[i] - at_time))
+        if abs(times[nearest] - at_time) >= 1.0:
+            return 0.0
+        return float(confidences[nearest])
+
+    current_time = start_time
+    while current_time < end_time:
+        camera_confidences = {
+            camera: score_at(camera, current_time) for camera in all_asd_data
+        }
+        highest_camera = max(camera_confidences, key=camera_confidences.get, default=None)
+        highest_conf = (
+            camera_confidences.get(highest_camera, 0.0) if highest_camera is not None else 0.0
+        )
+
+        current_conf = camera_confidences.get(current_camera, 0.0)
+        best_cam = current_camera
+        if highest_camera is not None and highest_conf >= SPEAKER_CONFIDENCE_THRESHOLD:
+            if current_camera is None or current_conf < SPEAKER_CONFIDENCE_THRESHOLD:
+                best_cam = highest_camera
+            elif highest_camera != current_camera and highest_conf >= (
+                current_conf + SPEAKER_SWITCH_MARGIN
+            ):
+                best_cam = highest_camera
+        elif current_camera is None:
+            best_cam = next(iter(sources_data), None)
+
+        is_near_boundary = any(abs(b - current_time) < 0.5 for b in all_boundaries)
+
+        if current_camera is None:
+            current_camera = best_cam
+            segment_start = current_time
+        elif best_cam == current_camera:
+            pending_camera = None
+            pending_camera_steps = 0
         else:
-            segments.append({
-                "start_sec": w["time_sec"],
-                "end_sec": round(w["time_sec"] + window_sec, 3),
-                "camera": w["camera"],
-                "file": w["file"],
-                "_scores": [w["score"]],
-            })
+            if best_cam == pending_camera:
+                pending_camera_steps += 1
+            else:
+                pending_camera = best_cam
+                pending_camera_steps = 1
 
-    # Absorb short segments into previous segment to enforce min shot duration
-    cleaned = []
-    for seg in segments:
-        duration = seg["end_sec"] - seg["start_sec"]
-        if cleaned and duration < min_shot_sec:
-            cleaned[-1]["end_sec"] = seg["end_sec"]
-            cleaned[-1]["_scores"].extend(seg["_scores"])
-        else:
-            cleaned.append(seg)
+            current_duration = current_time - segment_start
+            if (
+                pending_camera_steps >= SPEAKER_SWITCH_CONFIRMATION_STEPS
+                and current_duration >= MIN_SHOT_DURATION_SEC
+                and not is_near_boundary
+            ):
+                close_segment(current_time)
+                current_camera = best_cam
+                segment_start = current_time
+                pending_camera = None
+                pending_camera_steps = 0
+                confidence_totals[current_camera] = 0.0
+                confidence_counts[current_camera] = 0
 
-    for seg in cleaned:
-        seg["avg_score"] = round(float(np.mean(seg["_scores"])), 1)
-        del seg["_scores"]
+        if current_camera is not None:
+            confidence_totals[current_camera] = (
+                confidence_totals.get(current_camera, 0.0)
+                + camera_confidences.get(current_camera, 0.0)
+            )
+            confidence_counts[current_camera] = confidence_counts.get(current_camera, 0) + 1
 
-    return cleaned
+        current_time += 0.5
+
+    if current_camera and segment_start < end_time:
+        close_segment(end_time)
+
+    logger.info(f"Generated {len(segments)} camera switches.")
+    return segments
 
 
-def export_roughcut_fcpxml(segments, output_path="rough_cut.fcpxml", fps=25.0):
-    """
-    Export camera switch rough cut as FCPXML version 1.8 with markers and segments.
-    Resolves timeline import compatibility for Final Cut Pro & DaVinci Resolve.
-    """
+def export_roughcut_fcpxml(segments: List[dict], output_path: str, fps: float = 25.0):
+    """Generates a basic FCPXML 1.8 file from the AI segments."""
+    import xml.etree.ElementTree as ET
+
+    total_duration = segments[-1]["end"] if segments else 0.0
+
     fcpxml = ET.Element("fcpxml", version="1.8")
     resources = ET.SubElement(fcpxml, "resources")
 
-    frame_duration_str = f"100/{int(fps * 100)}s"
-    format_elem = ET.SubElement(
-        resources,
-        "format",
-        id="r1",
-        name=f"FFVideoFormat1080p{int(fps)}",
-        frameDuration=frame_duration_str,
-        width="1920",
-        height="1080",
-    )
-
-    # Add asset definitions for unique files
-    file_assets = {}
-    asset_counter = 2
-    for seg in segments:
-        fname = seg["file"]
-        if fname not in file_assets:
-            aid = f"r{asset_counter}"
-            asset_counter += 1
-            ET.SubElement(resources, "asset", id=aid, name=fname, src=fname, format="r1")
-            file_assets[fname] = aid
+    format_id = "r1"
+    ET.SubElement(resources, "format", id=format_id, name="FFVideoFormat1080p25",
+                  frameDuration=f"1/{int(fps)}s", width="1920", height="1080")
 
     library = ET.SubElement(fcpxml, "library")
-    event = ET.SubElement(library, "event", name="SyncCut Rough Cut")
-    project = ET.SubElement(event, "project", name="Rough Cut Suggested Timeline")
-    sequence = ET.SubElement(project, "sequence", format="r1", duration="1000s")
+    event = ET.SubElement(library, "event", name="SyncCut AI Rough Cut")
+    project = ET.SubElement(event, "project", name="AI Multicam Assembly")
+
+    sequence = ET.SubElement(project, "sequence", format=format_id,
+                             duration=f"{int(total_duration * fps)}/{int(fps)}s")
     spine = ET.SubElement(sequence, "spine")
 
-    for idx, seg in enumerate(segments):
-        duration_sec = seg["end_sec"] - seg["start_sec"]
-        duration_frames = int(round(duration_sec * fps))
-        start_frames = int(round(seg["start_sec"] * fps))
+    for i, seg in enumerate(segments):
+        start_frames = int(seg["start"] * fps)
+        end_frames = int(seg["end"] * fps)
+        duration_frames = end_frames - start_frames
 
-        dur_str = f"{duration_frames * 100}/{int(fps * 100)}s"
-        start_str = f"{start_frames * 100}/{int(fps * 100)}s"
-
-        asset_id = file_assets.get(seg["file"], "r2")
-        asset_clip = ET.SubElement(
-            spine,
-            "asset-clip",
-            name=f"{seg['camera']} ({seg['file']})",
-            ref=asset_id,
-            offset=start_str,
-            duration=dur_str,
-            start="0s",
-        )
-        # Add marker indicator for suggestion
-        ET.SubElement(
-            asset_clip,
-            "marker",
-            start="0s",
-            duration=dur_str,
-            value=f"Suggested Switch: {seg['camera']}",
-            note="Active speaker rough cut suggestion — editable",
-        )
+        clip = ET.SubElement(spine, "clip", name=f"{seg['camera']} - Cut {i + 1}",
+                             offset=f"{start_frames}/{int(fps)}s",
+                             duration=f"{duration_frames}/{int(fps)}s")
+        ET.SubElement(clip, "marker", start="0s", duration="1/25s", value="AI SyncCut Switch")
 
     tree = ET.ElementTree(fcpxml)
+    ET.indent(tree, space="  ")
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
-    return output_path

@@ -31,10 +31,16 @@ def extract_audio(input_path, output_dir="_audio_cache"):
         "-vn",                # no video
         "-ac", "1",           # mono
         "-ar", str(TARGET_SR),# 16kHz
+        "-c:a", "pcm_s16le",
         "-loglevel", "error",
         out_path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg failed on {input_path}:\n{result.stderr}")
     return out_path
@@ -46,11 +52,14 @@ def extract_audio_batch(input_paths, output_dir="_audio_cache", max_workers=None
     Significantly speeds up multi-camera ingest for wedding/event footage.
     """
     from concurrent.futures import ThreadPoolExecutor
+    if not input_paths:
+        return []
+
     if max_workers is None:
-        # On memory-constrained cloud environments (e.g. Render free 512MB RAM),
-        # limit concurrent ffmpeg decoders to avoid OOM killer.
         detected_cpus = os.cpu_count() or 1
-        max_workers = min(len(input_paths), min(detected_cpus, 2))
+        max_workers = min(len(input_paths), max(2, detected_cpus))
+    else:
+        max_workers = max(1, min(max_workers, len(input_paths)))
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(lambda p: extract_audio(p, output_dir=output_dir), input_paths))
@@ -66,3 +75,21 @@ def get_duration(input_path):
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed on {input_path}:\n{result.stderr}")
     return float(result.stdout.strip())
+
+
+def get_video_frame_rate(input_path):
+    """Return the average video frame rate, or None when it cannot be measured."""
+    cmd = [
+        get_ffprobe_path(), "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=avg_frame_rate",
+        "-of", "default=noprint_wrappers=1:nokey=1", input_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed on {input_path}:\n{result.stderr}")
+    value = result.stdout.strip()
+    if not value or value == "0/0":
+        return None
+    numerator, separator, denominator = value.partition("/")
+    rate = float(numerator) / float(denominator) if separator else float(value)
+    return rate if rate > 0 else None

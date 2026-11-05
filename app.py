@@ -33,4 +33,4 @@ if __name__ == "__main__":
         daemon=True,
     ).start()
     print(f"SyncCut Desktop running at {url}")
-    app.run(host=host, port=port, debug=False)
+    app.run(host=host, port=port, debug=True, use_reloader=False)

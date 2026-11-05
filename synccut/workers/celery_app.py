@@ -1,40 +1,32 @@
-"""
-Celery application stub — ready for Redis broker / result backend.
-
-Activate when deploying workers:
-    celery -A synccut.workers.celery_app.celery_app worker --loglevel=info
-"""
-from __future__ import annotations
-
 import os
+from celery import Celery
 
-try:
-    from celery import Celery
-except ImportError:  # Celery optional until production queue is enabled
-    Celery = None  # type: ignore
+from synccut.config import TASK_SOFT_TIME_LIMIT, TASK_TIME_LIMIT
 
+# WHY: We use Redis as the message broker (the queue) and the backend (to store results).
+# We pull these from environment variables so it works locally AND in Docker.
+broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+result_backend = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
-def _make_celery() -> "Celery | None":
-    if Celery is None:
-        return None
-    broker = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    backend = os.environ.get("CELERY_RESULT_BACKEND", broker)
-    app = Celery("synccut", broker=broker, backend=backend)
-    app.conf.update(
-        task_serializer="json",
-        accept_content=["json"],
-        result_serializer="json",
-        timezone="UTC",
-        enable_utc=True,
-        task_track_started=True,
-    )
-    return app
+# WHY: We instantiate Celery. The name "synccut_worker" is just an identifier.
+celery_app = Celery(
+    "synccut_worker",
+    broker=broker_url,
+    backend=result_backend,
+    include=["synccut.workers.tasks"] # WHY: Tells Celery where to find our actual tasks
+)
 
-
-celery_app = _make_celery()
-
-
-# Example task signature for the future Redis/Celery cutover from ThreadPoolExecutor:
-# @celery_app.task(name="synccut.sync_job")
-# def sync_job(session_id: str, payload: dict) -> dict:
-#     ...
+# WHY: Standard Celery settings for JSON serialization (safest and most readable).
+celery_app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    timezone="UTC",
+    enable_utc=True,
+    # WHY: Prevents a task from hanging forever if the worker crashes.
+    task_track_started=True,
+    result_backend=result_backend,  # Force the backend to use Redis
+    broker_connection_retry_on_startup=True,
+    task_soft_time_limit=TASK_SOFT_TIME_LIMIT,
+    task_time_limit=TASK_TIME_LIMIT,
+)

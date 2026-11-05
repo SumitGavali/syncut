@@ -12,6 +12,7 @@ Gunicorn:
 from __future__ import annotations
 
 import os
+import secrets
 import socket
 from pathlib import Path
 
@@ -19,19 +20,38 @@ from flask import Flask
 from flask_cors import CORS
 
 from synccut.api.db import init_db
-from synccut.api.job_manager import start_executor
+
 from synccut.api.routes import bp as api_bp
 from synccut.paths import (
     cleanup_old_temp_files,
     get_base_dir,
     get_sessions_dir,
+    get_user_data_dir,
 )
 
 
 DEFAULT_CORS_ORIGINS = [
     "https://snycut-site-ten.vercel.app",
     "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
 ]
+
+
+def _get_secret_key() -> str:
+    configured = os.environ.get("SYNCCUT_SECRET_KEY")
+    if configured:
+        return configured
+    secret_path = get_user_data_dir() / ".flask_secret_key"
+    try:
+        with secret_path.open("x", encoding="utf-8") as secret_file:
+            secret = secrets.token_hex(32)
+            secret_file.write(secret)
+            return secret
+    except FileExistsError:
+        return secret_path.read_text(encoding="utf-8").strip()
 
 
 def find_free_port(preferred: int = 5000) -> int:
@@ -64,6 +84,8 @@ def create_app(config: dict | None = None) -> Flask:
     )
 
     app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024 * 1024  # 4 GB
+    app.config["SECRET_KEY"] = _get_secret_key()
+    app.config["STUDIO_URL"] = os.environ.get("SYNCCUT_STUDIO_URL", "http://localhost:5173")
     app.config["APP_ROOT"] = str(get_base_dir())
     app.config["UPLOAD_ROOT"] = str(get_sessions_dir())
     if config:
@@ -85,7 +107,5 @@ def create_app(config: dict | None = None) -> Flask:
     # Celery workers will replace job_manager.start_executor() later.
     if not app.config.get("TESTING"):
         init_db()
-        if os.environ.get("SYNCCUT_SKIP_EXECUTOR", "").lower() not in ("1", "true", "yes"):
-            start_executor()
 
     return app

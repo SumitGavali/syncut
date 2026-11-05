@@ -7,3 +7,7 @@ matplotlib
 opentimelineio
 gunicorn
 platformdirs
+celery>=5.5
+redis
+celery[redis]
+onnxruntime

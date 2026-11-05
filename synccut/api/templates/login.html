@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · SyncCut Studio</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0a0a0c; color: #ededed; }
+    body { min-height: 100vh; display: grid; place-items: center; margin: 0; padding: 1rem; }
+    main { width: min(100%, 24rem); padding: 2rem; border: 1px solid #2a2a32; border-radius: 1rem; background: #121216; box-sizing: border-box; }
+    h1 { margin: 0 0 .4rem; font-size: 1.5rem; }
+    p { color: #a1a1aa; font-size: .9rem; }
+    label { display: block; margin-top: 1rem; font-size: .85rem; }
+    input { box-sizing: border-box; width: 100%; margin-top: .4rem; padding: .7rem; border: 1px solid #2a2a32; border-radius: .5rem; background: #18181e; color: white; }
+    button { width: 100%; margin-top: 1.25rem; padding: .75rem; border: 0; border-radius: .5rem; background: #00e5ff; color: #04181c; font-weight: 700; cursor: pointer; }
+    .error { color: #fda4af; }
+    a { color: #00e5ff; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sign in to SyncCut</h1>
+    <p>Sign in with your SyncCut Studio account to open the dashboard.</p>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="/login">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+    <p>New to SyncCut? <a href="{{ studio_url }}/login">Create an account in SyncCut Studio</a>.</p>
+  </main>
+</body>
+</html>

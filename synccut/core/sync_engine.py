@@ -2,6 +2,8 @@
 sync_engine.py — Core GCC-PHAT offset detection and global multi-source solver.
 Phase 1: Global multi-source alignment solver with robust loss optimization & RANSAC.
 """
+import os
+
 import numpy as np
 from scipy.io import wavfile
 from scipy.optimize import least_squares
@@ -192,6 +194,31 @@ def solve_multi_source_sync(
       feature_dicts: list of feature dicts per source relative to reference
     """
     N = len(signals)
+    if (
+        os.environ.get("SYNC_ENGINE", "fast").strip().lower() != "legacy"
+        and N > 1
+        and min(len(samples) for samples in signals) >= 16 * fs
+    ):
+        from synccut.core.sync_core import sync_arrays
+
+        names = ["Reference"] + [
+            f"Camera {chr(64 + i)}" if i <= 26 else f"Source {i}"
+            for i in range(1, N)
+        ]
+        result = sync_arrays(
+            signals,
+            names=names,
+            sample_rate=fs,
+        )
+        offsets = np.asarray(
+            [result["cameras"][name]["offset_s"] for name in names],
+            dtype=float,
+        )
+        confidences = [
+            result["cameras"][name]["link_confidence"] for name in names
+        ]
+        return offsets, confidences, [{} for _ in names]
+
     delta_matrix, weight_matrix, feature_matrix = compute_pairwise_matrix(
         signals, fs, max_tau=max_tau, use_phat=use_phat
     )
