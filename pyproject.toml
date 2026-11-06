@@ -13,7 +13,7 @@ authors = [
     {name = "SyncCut Team"}
 ]
 dependencies = [
-    "numpy",
+    "numpy<2.3",
     "scipy",
     "scikit-learn",
     "matplotlib",
@@ -21,7 +21,15 @@ dependencies = [
     "flask-cors",
     "opentimelineio",
     "platformdirs",
+    "celery[redis]>=5.5",
+    "onnxruntime",
+    "opencv-python-headless",
+    "librosa",
+    "reportlab",
     "gunicorn",
+    "SQLAlchemy>=2.0,<3.0",
+    "psycopg2-binary>=2.9,<3.0",
+    "stripe>=10.0,<17.0",
 ]
 
 [project.scripts]

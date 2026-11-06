@@ -1,6 +1,6 @@
 flask
 flask-cors
-numpy
+numpy<2.3
 scipy
 scikit-learn
 matplotlib
@@ -11,3 +11,9 @@ celery>=5.5
 redis
 celery[redis]
 onnxruntime
+opencv-python-headless
+librosa
+reportlab
+SQLAlchemy>=2.0,<3.0
+psycopg2-binary>=2.9,<3.0
+stripe>=10.0,<17.0

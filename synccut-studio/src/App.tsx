@@ -7,6 +7,7 @@ import Landing from '@/pages/Landing';
 import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import Workspace from '@/pages/Workspace';
+import Pricing from '@/pages/Pricing';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -48,6 +49,15 @@ const AnimatedRoutes: React.FC = () => {
           element={
             <PageTransition>
               <Login />
+            </PageTransition>
+          }
+        />
+
+        <Route
+          path="/pricing"
+          element={
+            <PageTransition>
+              <Pricing />
             </PageTransition>
           }
         />

@@ -3,6 +3,7 @@ import { Clapperboard, FileCode2, FileText, Loader2, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { exportTimeline } from '@/lib/api';
 import { useStore } from '@/store/useStore';
+import { useEditorStore } from '@/store/useEditorStore';
 
 // NOTE: "fcpxml" is in your contract; "aaf" and "audit_pdf" are assumed format keys. Rename to match Flask.
 const EXPORTS = [
@@ -18,6 +19,7 @@ export default function ExportPanel() {
 
   const run = async (key: string, ext: string) => {
     const { sessionId, manualOverrides, toProjectFile } = useStore.getState();
+    const { clips } = useEditorStore.getState();
     setBusy(key);
     setError(null);
     try {
@@ -26,6 +28,7 @@ export default function ExportPanel() {
         key,
         toProjectFile(),
         manualOverrides,
+        clips,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

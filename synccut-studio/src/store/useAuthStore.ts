@@ -6,7 +6,8 @@ export interface User {
   name: string;
   email: string;
   avatarUrl: string;
-  plan: 'Free Trial' | 'Pro Plan' | 'Studio Enterprise';
+  tier: 'free' | 'pro' | 'studio';
+  plan: 'Free Plan' | 'Pro Plan' | 'Studio Plan';
 }
 
 interface AuthState {
@@ -42,7 +43,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         name: remoteUser.name,
         email: remoteUser.email,
         avatarUrl: DEFAULT_AVATAR,
-        plan: remoteUser.plan || 'Pro Plan',
+        tier: remoteUser.tier || 'free',
+        plan: remoteUser.plan || 'Free Plan',
       };
       localStorage.setItem('synccut_auth_user', JSON.stringify(userObj));
       set({
@@ -73,7 +75,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       name: resp.user.name || safeName,
       email: resp.user.email || email.trim(),
       avatarUrl: DEFAULT_AVATAR,
-      plan: resp.user.plan || 'Pro Plan',
+      tier: resp.user.tier || 'free',
+      plan: resp.user.plan || 'Free Plan',
     };
 
     localStorage.setItem('synccut_auth_token', resp.token);

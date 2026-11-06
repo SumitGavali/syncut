@@ -10,7 +10,8 @@ import {
   Sparkles,
   Shield,
   Film,
-  Zap,
+  CreditCard,
+  LoaderCircle,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useProjectStore } from '@/store/useProjectStore';
@@ -34,6 +35,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { createCheckoutApi } from '@/lib/api';
 
 export default function Dashboard() {
   const { user, logout } = useAuthStore();
@@ -44,6 +46,9 @@ export default function Dashboard() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [projectDesc, setProjectDesc] = useState('');
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  const isFreeTier = !user || user.tier === 'free';
+  const tierLabel = isFreeTier ? 'Free Plan' : user.plan;
 
   useEffect(() => {
     fetchProjects();
@@ -81,6 +86,16 @@ export default function Dashboard() {
     toast.info('Signed out of SyncCut Studio.');
   };
 
+  const handleUpgrade = async () => {
+    setIsUpgrading(true);
+    try {
+      window.location.assign(await createCheckoutApi());
+    } catch {
+      toast.error('Unable to start checkout. Please try again later.');
+      setIsUpgrading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-[#ededed] flex flex-col selection:bg-[#00E5FF]/20 selection:text-[#00E5FF]">
       {/* Ambient background glow */}
@@ -111,9 +126,13 @@ export default function Dashboard() {
           {/* User Profile, Plan Status & New Project CTA */}
           <div className="flex items-center gap-4">
             {/* Plan Status Pill */}
-            <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-[#00E5FF]/30 bg-[#00E5FF]/10 px-3 py-1 text-xs font-semibold text-[#00E5FF] shadow-[0_0_15px_rgba(0,229,255,0.15)]">
+            <div className={`hidden sm:flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
+              isFreeTier
+                ? 'border-white/10 bg-white/5 text-[#a1a1aa]'
+                : 'border-[#00E5FF]/30 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_15px_rgba(0,229,255,0.15)]'
+            }`}>
               <Sparkles className="h-3.5 w-3.5" />
-              <span>{user?.plan || 'Pro Plan'}</span>
+              <span>{tierLabel}</span>
             </div>
 
             {/* New Project Button */}
@@ -142,16 +161,25 @@ export default function Dashboard() {
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-semibold text-white">{user?.name || 'Lead Video Editor'}</p>
-                    <p className="text-xs text-[#71717a] truncate">{user?.email || 'editor@synccut.studio'}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-xs text-[#71717a]">{user?.email || 'editor@synccut.studio'}</p>
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        isFreeTier
+                          ? 'border-white/10 bg-white/5 text-[#a1a1aa]'
+                          : 'border-[#00E5FF]/30 bg-[#00E5FF]/10 text-[#00E5FF] shadow-[0_0_12px_rgba(0,229,255,0.18)]'
+                      }`}>
+                        {tierLabel}
+                      </span>
+                    </div>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => toast.info('Billing settings available in account portal.')}
+                  onClick={() => navigate('/pricing')}
                   className="cursor-pointer text-xs"
                 >
                   <Shield className="h-3.5 w-3.5 mr-2 text-[#00E5FF]" />
-                  Subscription: {user?.plan || 'Pro Plan'}
+                  Subscription: {user?.plan || 'Free Plan'}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => navigate('/')}
@@ -173,6 +201,23 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {isFreeTier && (
+        <div role="status" className="border-b border-white/5 bg-[#141418]">
+          <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+            <p className="text-sm text-[#c4c4cc]">
+              You are on the Free plan. Upgrade to Pro to unlock AI cuts and 4K exports.
+            </p>
+            <Button
+              size="sm"
+              onClick={() => navigate('/pricing')}
+              className="shrink-0 bg-[#00E5FF] font-semibold text-[#04181c] hover:bg-[#33ecff]"
+            >
+              Upgrade to Pro
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Main Dashboard Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -228,6 +273,45 @@ export default function Dashboard() {
             <p className="text-2xl font-bold text-white mt-1">—</p>
           </div>
         </div>
+
+        <section
+          id="billing"
+          className="flex flex-col gap-5 rounded-xl border border-white/10 bg-[#121217] p-5 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-start gap-3">
+            <CreditCard className="mt-0.5 h-5 w-5 text-[#00E5FF]" />
+            <div>
+              <h2 className="text-sm font-semibold text-white">Billing</h2>
+              <p className="mt-1 text-sm text-[#a1a1aa]">
+                Current plan: <span className="font-semibold text-[#ededed]">{tierLabel}</span>
+              </p>
+              <p className="mt-1 text-xs text-[#71717a]">
+                {isFreeTier
+                  ? 'Upgrade for more cameras, longer footage, AI cuts, 4K, AAF, and FCPXML.'
+                  : 'Your Pro and Studio features are enabled for this account.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/pricing')}
+              className="border-white/10 text-[#ededed]"
+            >
+              View plans
+            </Button>
+            {isFreeTier && (
+              <Button
+                onClick={handleUpgrade}
+                disabled={isUpgrading}
+                className="bg-[#00E5FF] font-semibold text-[#04181c] hover:bg-[#33ecff]"
+              >
+                {isUpgrading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                Upgrade to Pro
+              </Button>
+            )}
+          </div>
+        </section>
 
         {/* Projects Grid Section */}
         <section className="space-y-4">

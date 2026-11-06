@@ -13,6 +13,8 @@ import { FileCode2, Clapperboard, FileText, Download, Loader2, Film } from 'luci
 import { exportTimeline } from '@/lib/api';
 import { useStore } from '@/store/useStore';
 import { useEditorStore } from '@/store/useEditorStore'; // <-- IMPORT ADDED
+import { useAuthStore } from '@/store/useAuthStore';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 interface ExportModalProps {
@@ -27,6 +29,7 @@ interface ExportFormatOption {
   name: string;
   subtitle: string;
   icon: React.ElementType;
+  proOnly?: boolean;
 }
 
 const FORMAT_OPTIONS: ExportFormatOption[] = [
@@ -37,6 +40,7 @@ const FORMAT_OPTIONS: ExportFormatOption[] = [
     name: 'FCPXML (Final Cut Pro / Premiere)',
     subtitle: 'Includes multicam sync offsets, clip markers & manual NLE edits',
     icon: FileCode2,
+    proOnly: true,
   },
   {
     id: 'edl',
@@ -53,6 +57,7 @@ const FORMAT_OPTIONS: ExportFormatOption[] = [
     name: 'AAF (Avid Media Composer / Pro Tools)',
     subtitle: 'Sync offsets, camera lanes, and the edited program lane',
     icon: Clapperboard,
+    proOnly: true,
   },
   {
     id: 'audit_pdf',
@@ -65,7 +70,11 @@ const FORMAT_OPTIONS: ExportFormatOption[] = [
 ];
 
 export const ExportModal: React.FC<ExportModalProps> = ({ open, onOpenChange }) => {
-  const [selectedFormats, setSelectedFormats] = useState<string[]>(['fcpxml']);
+  const tier = useAuthStore((state) => state.user?.tier ?? 'free');
+  const navigate = useNavigate();
+  const [selectedFormats, setSelectedFormats] = useState<string[]>([
+    tier === 'free' ? 'edl' : 'fcpxml',
+  ]);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadStep, setDownloadStep] = useState<string | null>(null);
   const [confirmWeak, setConfirmWeak] = useState(false);
@@ -79,7 +88,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({ open, onOpenChange }) 
     if (!open) setConfirmWeak(false);
   }, [open]);
 
+  useEffect(() => {
+    if (tier === 'free') {
+      setSelectedFormats((formats) => {
+        const available = formats.filter((format) => format !== 'fcpxml' && format !== 'aaf');
+        return available.length ? available : ['edl'];
+      });
+    }
+  }, [tier]);
+
   const toggleFormat = (id: string) => {
+    const option = FORMAT_OPTIONS.find((format) => format.id === id);
+    if (tier === 'free' && option?.proOnly) {
+      navigate('/pricing');
+      return;
+    }
     setSelectedFormats((prev) =>
       prev.includes(id)
         ? prev.length > 1
@@ -174,6 +197,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ open, onOpenChange }) 
           {FORMAT_OPTIONS.map((opt) => {
             const Icon = opt.icon;
             const isChecked = selectedFormats.includes(opt.id);
+            const requiresPro = tier === 'free' && opt.proOnly;
 
             return (
               <div
@@ -188,12 +212,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ open, onOpenChange }) 
                 <Checkbox
                   checked={isChecked}
                   onCheckedChange={() => toggleFormat(opt.id)}
+                  disabled={requiresPro}
                   className="mt-0.5"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <Icon className={`h-4 w-4 ${isChecked ? 'text-[#00E5FF]' : 'text-[#71717a]'}`} />
                     <span className="text-sm font-semibold text-white">{opt.name}</span>
+                    {requiresPro && (
+                      <span className="rounded border border-[#00E5FF]/30 px-1.5 py-0.5 text-[10px] text-[#00E5FF]">
+                        PRO
+                      </span>
+                    )}
                   </div>
                   <p className="mt-0.5 text-xs text-[#a1a1aa] leading-relaxed">
                     {opt.subtitle}
@@ -203,6 +233,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ open, onOpenChange }) 
             );
           })}
         </div>
+        {tier === 'free' && (
+          <p className="-mt-2 text-xs text-[#a1a1aa]">
+            <button
+              type="button"
+              onClick={() => navigate('/pricing')}
+              className="font-semibold text-[#00E5FF] hover:underline"
+            >
+              Upgrade to Pro
+            </button>{' '}
+            to unlock FCPXML and AAF exports.
+          </p>
+        )}
 
         <DialogFooter className="gap-2 sm:gap-0">
           <Button

@@ -5,8 +5,9 @@ from synccut.config import TASK_SOFT_TIME_LIMIT, TASK_TIME_LIMIT
 
 # WHY: We use Redis as the message broker (the queue) and the backend (to store results).
 # We pull these from environment variables so it works locally AND in Docker.
-broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-result_backend = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+broker_url = os.environ.get("CELERY_BROKER_URL", redis_url)
+result_backend = os.environ.get("CELERY_RESULT_BACKEND", redis_url)
 
 # WHY: We instantiate Celery. The name "synccut_worker" is just an identifier.
 celery_app = Celery(

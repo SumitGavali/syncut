@@ -79,6 +79,8 @@ def test_legacy_dashboard_redirects_to_login_until_authenticated(api_client):
         ("/api/projects", "get"),
         ("/api/projects", "post"),
         ("/api/upload", "post"),
+        ("/api/sync", "post"),
+        ("/api/sync_async", "post"),
     ],
 )
 def test_private_project_and_upload_routes_require_auth(api_client, path, method):
@@ -116,6 +118,8 @@ def test_authenticated_upload_saves_supported_files_and_starts_pipeline(
 ):
     token = register_user(api_client)
     headers = {"Authorization": f"Bearer {token}"}
+    from synccut.core import quota
+    monkeypatch.setattr(quota, "check_video_duration", lambda _path: 60.0)
 
     from synccut.workers.tasks import full_pipeline_task
 
@@ -123,6 +127,12 @@ def test_authenticated_upload_saves_supported_files_and_starts_pipeline(
         full_pipeline_task,
         "delay",
         lambda *_args, **_kwargs: SimpleNamespace(id="test-job"),
+    )
+    from synccut.workers import job_control
+    monkeypatch.setattr(
+        job_control,
+        "redis_client",
+        lambda: SimpleNamespace(ping=lambda: None),
     )
 
     response = api_client.post(
@@ -143,6 +153,34 @@ def test_authenticated_upload_saves_supported_files_and_starts_pipeline(
     session_dir = tmp_path / "uploads" / "test-session"
     assert (session_dir / "01_same-name.mp4").read_bytes() == b"reference video"
     assert (session_dir / "02_same-name.mp4").read_bytes() == b"camera video"
+
+
+def test_rejected_upload_preserves_existing_session_media(api_client, tmp_path, monkeypatch):
+    token = register_user(api_client)
+    owner_id = db.get_user_by_token(token)["id"]
+    session_dir = tmp_path / "uploads" / "existing-session"
+    session_dir.mkdir(parents=True)
+    (session_dir / ".owner.json").write_text(json.dumps({"user_id": owner_id}), encoding="utf-8")
+    (session_dir / "01_same-name.mp4").write_bytes(b"existing reference")
+    (session_dir / "02_same-name.mp4").write_bytes(b"existing camera")
+
+    from synccut.core import quota
+    monkeypatch.setattr(quota, "check_video_duration", lambda _path: 601.0)
+    response = api_client.post(
+        "/api/upload",
+        data={
+            "session_id": "existing-session",
+            "files": [
+                (BytesIO(b"new reference"), "same-name.mp4"),
+                (BytesIO(b"new camera"), "same-name.mp4"),
+            ],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert (session_dir / "01_same-name.mp4").read_bytes() == b"existing reference"
+    assert (session_dir / "02_same-name.mp4").read_bytes() == b"existing camera"
 
 
 def test_upload_rejects_traversal_and_another_accounts_session(api_client):

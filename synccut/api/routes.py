@@ -13,9 +13,10 @@ import threading
 import traceback
 import uuid
 import time
+from tempfile import TemporaryDirectory
 from functools import wraps
 
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_file, session
+from flask import Blueprint, current_app, g, jsonify, redirect, render_template, request, send_file, session
 from werkzeug.utils import secure_filename
 
 from synccut.workers.tasks import run_sync_task, generate_proxies_task
@@ -36,8 +37,14 @@ from synccut.core.sync_core import sync_files
 from synccut.export.fcp7_exporter import export_fcp7_xml
 from synccut.export.timeline_builder import build_timeline, export_timeline
 from synccut.paths import get_sessions_dir, get_base_dir, get_ffmpeg_path
+from synccut.api.tier_limits import check_tier_limits
 
 bp = Blueprint("synccut", __name__)
+ALLOWED_MEDIA_EXTENSIONS = {
+    ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts", ".m2ts",
+    ".ts", ".mpg", ".mpeg", ".3gp", ".wmv", ".mp3", ".wav", ".m4a",
+    ".aac", ".flac", ".ogg",
+}
 
 # In-memory session store — keyed per browser session (single-worker only).
 SESSIONS: dict = {}
@@ -57,8 +64,10 @@ def _get_current_user():
 def require_auth(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not _get_current_user():
+        user = _get_current_user()
+        if not user:
             return jsonify({"error": "Authentication required."}), 401
+        g.current_user = user
         return view(*args, **kwargs)
     return wrapped
 
@@ -86,6 +95,35 @@ def session_dir(session_id: str) -> str:
         raise ValueError("Invalid session identifier.")
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def _claim_session(session_id: str, user_id: str):
+    if not isinstance(session_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", session_id
+    ):
+        return None, (jsonify({"error": "Missing session_id."}), 400)
+    try:
+        sdir = session_dir(session_id)
+    except ValueError:
+        return None, (jsonify({"error": "Invalid session identifier."}), 400)
+
+    owner_path = os.path.join(sdir, ".owner.json")
+    if os.path.isfile(owner_path):
+        try:
+            with open(owner_path, "r", encoding="utf-8") as owner_file:
+                owner_id = json.load(owner_file).get("user_id")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return None, (jsonify({"error": "Session ownership could not be verified."}), 403)
+        if owner_id != user_id:
+            return None, (jsonify({"error": "This session belongs to another account."}), 403)
+        return sdir, None
+
+    with os.scandir(sdir) as entries:
+        if next(entries, None) is not None:
+            return None, (jsonify({"error": "This session cannot be claimed."}), 403)
+    with open(owner_path, "w", encoding="utf-8") as owner_file:
+        json.dump({"user_id": user_id}, owner_file)
+    return sdir, None
 
 
 def get_session(session_id):
@@ -196,6 +234,8 @@ def new_session():
 
 
 @bp.route("/api/sync", methods=["POST"])
+@require_auth
+@check_tier_limits("upload")
 def run_sync():
     """
     Global multi-source sync.
@@ -203,16 +243,21 @@ def run_sync():
     Returns: sync report JSON with calibrated confidence badges and drift info.
     """
     session_id = request.form.get("session_id")
+    user = _get_current_user()
+    sdir, ownership_error = _claim_session(session_id, user["id"])
+    if ownership_error:
+        return ownership_error
     state = get_session(session_id)
     if not state:
         return jsonify({"error": "Invalid or missing session_id"}), 400
-
-    sdir = session_dir(session_id)
 
     reference_file = request.files.get("reference")
     input_files = request.files.getlist("inputs")
     if not reference_file or not input_files:
         return jsonify({"error": "A reference file and at least one source file are required."}), 400
+    incoming_files = [reference_file, *input_files]
+    if not 2 <= len(incoming_files) <= 8:
+        return jsonify({"error": "Select between 2 and 8 media files."}), 400
 
     meta_raw = request.form.get("metadata")
     client_meta = {}
@@ -223,18 +268,40 @@ def run_sync():
             client_meta = {}
 
     ref_orig_name = client_meta.get("reference_name") or reference_file.filename
-    ref_filename = secure_filename(reference_file.filename)
-    ref_path = os.path.join(sdir, ref_filename)
-    reference_file.save(ref_path)
-    state["reference_path"] = ref_path
-
-    input_paths = []
     input_orig_names = client_meta.get("input_names", [])
-    for f in input_files:
-        fname = secure_filename(f.filename)
-        fpath = os.path.join(sdir, fname)
-        f.save(fpath)
-        input_paths.append(fpath)
+    filenames = []
+    for uploaded_file in incoming_files:
+        filename = secure_filename(uploaded_file.filename)
+        if not filename or os.path.splitext(filename)[1].lower() not in ALLOWED_MEDIA_EXTENSIONS:
+            return jsonify({"error": f"Unsupported media file: {uploaded_file.filename or 'unnamed file'}."}), 415
+        filenames.append(filename)
+    target_paths = [os.path.join(sdir, filename) for filename in filenames]
+    if len(set(target_paths)) != len(target_paths) or any(os.path.exists(path) for path in target_paths):
+        return jsonify({"error": "This session already contains that file; use a new session."}), 409
+
+    ref_path = target_paths[0]
+    input_paths = target_paths[1:]
+    saved_paths = []
+    try:
+        for uploaded_file, target_path in zip(incoming_files, target_paths):
+            uploaded_file.save(target_path)
+            saved_paths.append(target_path)
+    except OSError as error:
+        for path in saved_paths:
+            os.remove(path)
+        return jsonify({"error": f"Could not save uploaded media: {error}"}), 400
+    from synccut.core.quota import enforce_limits
+    try:
+        enforce_limits(user["id"], target_paths)
+    except PermissionError as error:
+        for path in saved_paths:
+            os.remove(path)
+        return jsonify({"error": str(error)}), 403
+    except ValueError as error:
+        for path in saved_paths:
+            os.remove(path)
+        return jsonify({"error": str(error)}), 400
+    state["reference_path"] = ref_path
     state["input_paths"] = input_paths
     state["media_dir"] = sdir
 
@@ -313,6 +380,8 @@ def run_sync():
 
 
 @bp.route("/api/sync_async", methods=["POST"])
+@require_auth
+@check_tier_limits("upload")
 def run_sync_async():
     # Check both form data (for files) and JSON (for simple triggers)
     data = request.get_json(silent=True) or request.form
@@ -321,21 +390,41 @@ def run_sync_async():
     if not session_id:
         return jsonify({"error": "Missing session_id"}), 400
 
-    sdir = session_dir(session_id)
+    user = _get_current_user()
+    sdir, ownership_error = _claim_session(session_id, user["id"])
+    if ownership_error:
+        return ownership_error
 
     # If React sends files again, save them. Otherwise, look in the directory.
     reference_file = request.files.get("reference")
     input_files = request.files.getlist("inputs")
 
     if reference_file and input_files:
-        ref_path = os.path.join(sdir, secure_filename(reference_file.filename))
-        reference_file.save(ref_path)
-        input_paths = []
-        for f in input_files:
-            fpath = os.path.join(sdir, secure_filename(f.filename))
-            f.save(fpath)
-            input_paths.append(fpath)
+        incoming_files = [reference_file, *input_files]
+        if not 2 <= len(incoming_files) <= 8:
+            return jsonify({"error": "Select between 2 and 8 media files."}), 400
+        filenames = []
+        for uploaded_file in incoming_files:
+            filename = secure_filename(uploaded_file.filename)
+            if not filename or os.path.splitext(filename)[1].lower() not in ALLOWED_MEDIA_EXTENSIONS:
+                return jsonify({"error": f"Unsupported media file: {uploaded_file.filename or 'unnamed file'}."}), 415
+            filenames.append(filename)
+        target_paths = [os.path.join(sdir, filename) for filename in filenames]
+        if len(set(target_paths)) != len(target_paths) or any(os.path.exists(path) for path in target_paths):
+            return jsonify({"error": "This session already contains that file; use a new session."}), 409
+        uploaded_paths = []
+        try:
+            for uploaded_file, target_path in zip(incoming_files, target_paths):
+                uploaded_file.save(target_path)
+                uploaded_paths.append(target_path)
+        except OSError as error:
+            for path in uploaded_paths:
+                os.remove(path)
+            return jsonify({"error": f"Could not save uploaded media: {error}"}), 400
+        ref_path = target_paths[0]
+        input_paths = target_paths[1:]
     else:
+        uploaded_paths = []
         # Fallback: Use the files already uploaded in the /api/upload step
         import glob
         all_files = glob.glob(os.path.join(sdir, "*.mp4"))
@@ -343,6 +432,18 @@ def run_sync_async():
             return jsonify({"error": "Need at least 2 videos to sync"}), 400
         ref_path = all_files[0]
         input_paths = all_files[1:]
+
+    from synccut.core.quota import enforce_limits
+    try:
+        enforce_limits(user["id"], [ref_path, *input_paths])
+    except PermissionError as error:
+        for path in uploaded_paths:
+            os.remove(path)
+        return jsonify({"error": str(error)}), 403
+    except ValueError as error:
+        for path in uploaded_paths:
+            os.remove(path)
+        return jsonify({"error": str(error)}), 400
 
     try:
         from synccut.workers.tasks import run_sync_task
@@ -610,6 +711,7 @@ def _run_local_full_pipeline_job(job_id: str, session_id: str, file_paths: list)
 
 @bp.route("/api/upload", methods=["POST"])
 @require_auth
+@check_tier_limits("upload")
 def upload_files():
     """Validate and ingest 2-8 supported media files for the authenticated user."""
     session_id = request.form.get("session_id")
@@ -620,11 +722,7 @@ def upload_files():
     if not 2 <= len(files) <= 8:
         return jsonify({"error": "Select between 2 and 8 video or audio files."}), 400
 
-    allowed_extensions = {
-        ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts", ".m2ts",
-        ".ts", ".mpg", ".mpeg", ".3gp", ".wmv", ".mp3", ".wav", ".m4a",
-        ".aac", ".flac", ".ogg",
-    }
+    allowed_extensions = ALLOWED_MEDIA_EXTENSIONS
     safe_names = []
     for file in files:
         filename = secure_filename(file.filename)
@@ -654,22 +752,62 @@ def upload_files():
             return jsonify({"error": "This upload session already contains files and cannot be claimed."}), 403
         with open(owner_path, "w", encoding="utf-8") as owner_file:
             json.dump({"user_id": user["id"]}, owner_file)
-    saved_paths = []
+    from synccut.core.quota import enforce_limits
 
-    try:
-        for index, (file, filename) in enumerate(zip(files, safe_names), start=1):
-            fpath = os.path.join(sdir, f"{index:02d}_{filename}")
-            file.save(fpath)
-            if not os.path.isfile(fpath) or os.path.getsize(fpath) == 0:
-                raise ValueError(f"{filename} is empty or could not be saved.")
-            saved_paths.append(fpath)
-    except (OSError, ValueError) as error:
-        for saved_path in saved_paths:
-            try:
-                os.remove(saved_path)
-            except OSError:
-                pass
-        return jsonify({"error": f"Could not save uploaded media: {error}"}), 400
+    final_paths = [
+        os.path.join(sdir, f"{index:02d}_{filename}")
+        for index, filename in enumerate(safe_names, start=1)
+    ]
+    saved_paths = []
+    with TemporaryDirectory(prefix=".upload-", dir=sdir) as staging_dir:
+        staged_paths = []
+        try:
+            for index, (file, filename) in enumerate(zip(files, safe_names), start=1):
+                staged_path = os.path.join(staging_dir, f"{index:02d}_{filename}")
+                file.save(staged_path)
+                if not os.path.isfile(staged_path) or os.path.getsize(staged_path) == 0:
+                    raise ValueError(f"{filename} is empty or could not be saved.")
+                staged_paths.append(staged_path)
+        except (OSError, ValueError) as error:
+            return jsonify({"error": f"Could not save uploaded media: {error}"}), 400
+
+        replaced_paths = set(final_paths)
+        media_paths = []
+        with os.scandir(sdir) as entries:
+            for entry in entries:
+                if (
+                    entry.is_file()
+                    and entry.path not in replaced_paths
+                    and os.path.splitext(entry.name)[1].lower() in allowed_extensions
+                ):
+                    media_paths.append(entry.path)
+        media_paths.extend(staged_paths)
+        try:
+            enforce_limits(user["id"], media_paths)
+        except PermissionError as error:
+            return jsonify({"error": str(error)}), 403
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+        backups = {}
+        moved_paths = []
+        try:
+            for index, final_path in enumerate(final_paths, start=1):
+                if os.path.isfile(final_path):
+                    backup_path = os.path.join(staging_dir, f"backup-{index}")
+                    os.replace(final_path, backup_path)
+                    backups[final_path] = backup_path
+            for staged_path, final_path in zip(staged_paths, final_paths):
+                os.replace(staged_path, final_path)
+                moved_paths.append(final_path)
+        except OSError as error:
+            for moved_path in moved_paths:
+                os.remove(moved_path)
+            for original_path, backup_path in backups.items():
+                if os.path.exists(backup_path):
+                    os.replace(backup_path, original_path)
+            return jsonify({"error": f"Could not finalize uploaded media: {error}"}), 400
+        saved_paths = final_paths
 
     # Trigger Master Full Pipeline Task (Celery or fallback)
         # Trigger Master Full Pipeline Task (Celery or fallback)
@@ -1020,6 +1158,7 @@ def download_report_csv():
 
 @bp.route("/api/export/timeline", methods=["POST"])
 @require_auth
+@check_tier_limits("export")
 def export_timeline_route():
     """Export offset-aligned timeline (FCPXML, Premiere XML, AAF, or Audit PDF)."""
     data = request.get_json(silent=True) or {}
@@ -1185,6 +1324,8 @@ def export_timeline_route():
 
 
 @bp.route("/api/switches", methods=["POST"])
+@require_auth
+@check_tier_limits("ai_cuts")
 def analyze_switches_route():
     """Generate camera switch rough cut using ASD pipeline."""
     data = request.get_json(force=True)
@@ -1292,6 +1433,8 @@ def patch_timeline(project_id):
 
 
 @bp.route("/api/export/switch-timeline", methods=["POST"])
+@require_auth
+@check_tier_limits("ai_cuts")
 def export_switch_timeline_route():
     """Export rough cut FCPXML."""
     data = request.get_json(force=True)

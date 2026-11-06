@@ -21,6 +21,7 @@ from flask_cors import CORS
 
 from synccut.api.db import init_db
 
+from synccut.api.billing import billing_bp
 from synccut.api.routes import bp as api_bp
 from synccut.paths import (
     cleanup_old_temp_files,
@@ -91,17 +92,27 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
 
+    cors_origins = list(app.config.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS))
+    studio_origin = app.config["STUDIO_URL"].rstrip("/")
+    if studio_origin and studio_origin not in cors_origins:
+        cors_origins.append(studio_origin)
+
     CORS(
         app,
         resources={
             r"/api/*": {
-                "origins": app.config.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS),
+                "origins": cors_origins,
             }
         },
     )
 
     cleanup_old_temp_files(max_age_hours=24.0)
     app.register_blueprint(api_bp)
+    app.register_blueprint(billing_bp)
+
+    @app.get("/api/health")
+    def health():
+        return {"status": "ok"}
 
     # Eager init for local/desktop and single-worker gunicorn.
     # Celery workers will replace job_manager.start_executor() later.

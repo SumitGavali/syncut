@@ -48,6 +48,15 @@ Then open **http://localhost:5000**
 - `POST /api/switches` — offset-aligned camera switch suggestions
 - `POST /api/export/switch-timeline` — export rough-cut FCPXML
 
+## SaaS billing and deployment
+
+- Copy `.env.example` to `.env`. Without `DATABASE_URL`, the API uses a local SQLite database; PostgreSQL is used when `DATABASE_URL` is set.
+- Configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRO_PRICE_ID` in the server environment. Register `/api/billing/webhook` in Stripe for `checkout.session.completed` and `customer.subscription.deleted`.
+- The React Studio is in `synccut-studio/`; its dashboard and `/pricing` page use Stripe Checkout for Pro upgrades.
+- The root `Dockerfile` installs FFmpeg in the runtime image. `render.yaml` provisions the API, Celery worker, Redis, and PostgreSQL services.
+
+The current Celery pipeline passes local media paths between the API and worker. Render services have isolated filesystems, so setting `SYNCCUT_DATA_DIR` to the same path does not share uploaded files. Configure a shared filesystem or move media storage to an object-storage backend before processing uploads with the Render worker.
+
 ## Note
 Large uploads (multi-GB 4K footage) can take a while to process — this is
 CPU-bound audio cross-correlation running locally, not a network limitation.

@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: synccut-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: synccut-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: synccut-redis
+          property: connectionString
+      - key: SYNCCUT_DATA_DIR
+        value: /var/data
+      - key: SYNCCUT_SECRET_KEY
+        generateValue: true
+      - key: SYNCCUT_STUDIO_URL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRO_PRICE_ID
+        sync: false
+
+  - type: worker
+    name: synccut-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A synccut.workers.celery_app.celery_app worker --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: synccut-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: synccut-redis
+          property: connectionString
+      - key: SYNCCUT_DATA_DIR
+        value: /var/data
+
+  - type: keyvalue
+    name: synccut-redis
+    plan: starter
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: synccut-db
+    databaseName: synccut
+    user: synccut
+    plan: basic-256mb

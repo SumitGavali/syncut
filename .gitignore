@@ -7,6 +7,9 @@ venv/
 env/
 .pytest_cache/
 .flask_secret_key
+.env
+.env.*
+!.env.example
 
 # Node / React
 node_modules/

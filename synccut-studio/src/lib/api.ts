@@ -166,6 +166,21 @@ export async function getMeApi() {
   return data.user;
 }
 
+export interface BillingSubscription {
+  tier: 'free' | 'pro' | 'studio';
+  expires_at: string | null;
+}
+
+export async function getBillingSubscriptionApi(): Promise<BillingSubscription> {
+  const { data } = await http.get<BillingSubscription>('/api/billing/subscription');
+  return data;
+}
+
+export async function createCheckoutApi(): Promise<string> {
+  const { data } = await http.post<{ checkout_url: string }>('/api/billing/checkout');
+  return data.checkout_url;
+}
+
 export async function logoutApi() {
   await http.post('/api/auth/logout');
 }

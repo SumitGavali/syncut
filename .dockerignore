@@ -1,0 +1,8 @@
+**
+!requirements.txt
+!pyproject.toml
+!README.md
+!synccut/
+!synccut/**
+**/__pycache__/
+**/*.py[cod]

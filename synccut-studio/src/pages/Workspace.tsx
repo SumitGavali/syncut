@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import confetti from 'canvas-confetti';
 import {
   AudioLines, ChevronDown, CircleHelp, Clapperboard, Download, FilePlus2, Film,
   FolderOpen, Gauge, Music2, Redo2, Save, Undo2, WandSparkles,
@@ -302,6 +303,7 @@ export default function Workspace() {
   const [tourRun, setTourRun] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [menu, setMenu] = useState<'File' | 'Edit' | 'View' | null>(null);
+  const pendingTimelineCelebration = useRef(false);
   const isReady = pipeline.stage === 'ready';
   const isWorking = !['idle', 'ready', 'failed'].includes(pipeline.stage);
   const cameraCount = Math.max(cameras.length, allSources.length, files.length);
@@ -309,6 +311,35 @@ export default function Workspace() {
   // Sync segments to editor clips
   const editorClips = useMemo(() => buildEditorClips(segments, cameras, allSources), [segments, cameras, allSources]);
   useEffect(() => { setClips(editorClips); }, [editorClips, setClips]);
+  useEffect(() => {
+    if (!pendingTimelineCelebration.current || pipeline.stage !== 'ready' || editorClips.length === 0) return;
+    pendingTimelineCelebration.current = false;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    confetti({
+      particleCount: 180,
+      spread: 110,
+      startVelocity: 55,
+      origin: { y: 0.62 },
+      zIndex: 11000,
+    });
+    window.setTimeout(() => {
+      confetti({
+        particleCount: 90,
+        spread: 140,
+        startVelocity: 42,
+        origin: { x: 0.12, y: 0.68 },
+        zIndex: 11000,
+      });
+      confetti({
+        particleCount: 90,
+        spread: 140,
+        startVelocity: 42,
+        origin: { x: 0.88, y: 0.68 },
+        zIndex: 11000,
+      });
+    }, 180);
+  }, [editorClips, pipeline.stage]);
 
   // Load project on mount
   useEffect(() => {
@@ -388,6 +419,7 @@ export default function Workspace() {
     }
 
     setIsUploading(true);
+    pendingTimelineCelebration.current = true;
     const state = useStore.getState();
     state.setFiles(selected);
     state.setAllSources(selected.map((file) => URL.createObjectURL(file)));
@@ -411,6 +443,7 @@ export default function Workspace() {
       useStore.getState().setSyncStartedAt(Date.now());
       useStore.getState().setPipeline({ stage: 'syncing', percentage: null, message: 'Waiting for worker status', jobStatus: 'PENDING' });
     } catch (error: any) {
+      pendingTimelineCelebration.current = false;
       const message = error?.response?.data?.error ?? (error?.response?.status === 413 ? 'The selected files exceed the server upload limit.' : error?.message) ?? 'Could not upload the selected camera files.';
       useStore.getState().setPipeline({ stage: 'failed', percentage: null, message, jobStatus: 'FAILURE' });
       useStore.getState().setJobId(null);
@@ -441,6 +474,7 @@ export default function Workspace() {
           const syncData: CameraSync[] = Array.isArray(response?.sync_data) ? response.sync_data : [];
           const suggested: Segment[] = Array.isArray(response?.segments) ? response.segments : [];
           const program = buildProgramDraft(suggested, syncData);
+          if (!program.length) pendingTimelineCelebration.current = false;
           
           state.setSyncData(syncData);
           state.setSuggestedSegments(suggested);
@@ -466,6 +500,7 @@ export default function Workspace() {
           state.setJobId(null);
           if (!program.length) toast.error('Sync completed, but no program timeline could be assembled.');
         } else if (['FAILURE', 'REVOKED'].includes(result.status)) {
+          pendingTimelineCelebration.current = false;
           terminal = true;
           state.setPipeline({ stage: result.status === 'REVOKED' ? 'idle' : 'failed', percentage: null, message: result.metadata?.status || result.error || (result.status === 'REVOKED' ? 'Job cancelled.' : 'Background job failed.'), jobStatus: result.status });
           state.setJobId(null);

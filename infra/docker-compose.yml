@@ -10,23 +10,30 @@ services:
   api:
     build:
       context: ..
-      dockerfile: infra/Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "7860:7860"
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - SYNCCUT_DATA_DIR=/var/lib/synccut
+    volumes:
+      - synccut_data:/var/lib/synccut
     depends_on:
       - redis
 
   worker:
     build:
       context: ..
-      dockerfile: infra/Dockerfile
+      dockerfile: Dockerfile
     command: celery -A synccut.workers.celery_app.celery_app worker --loglevel=info
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - SYNCCUT_DATA_DIR=/var/lib/synccut
+    volumes:
+      - synccut_data:/var/lib/synccut
     depends_on:
       - redis
       - api
+
+volumes:
+  synccut_data:
