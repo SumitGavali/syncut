@@ -58,7 +58,7 @@ export default function Pricing() {
               </DialogDescription>
 
               <div className="my-4 flex justify-center rounded-xl bg-white p-4">
-                <img src="/image.png" alt="GPay QR" className="h-64 w-64 object-contain" />
+                <img src="" alt="GPay QR" className="h-64 w-64 object-contain" />
               </div>
 
               <p className="mb-4 text-sm text-muted">

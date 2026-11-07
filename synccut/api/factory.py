@@ -89,6 +89,9 @@ def create_app(config: dict | None = None) -> Flask:
     app.config["STUDIO_URL"] = os.environ.get("SYNCCUT_STUDIO_URL", "http://localhost:5173")
     app.config["APP_ROOT"] = str(get_base_dir())
     app.config["UPLOAD_ROOT"] = str(get_sessions_dir())
+    app.config["SESSION_COOKIE_SAMESITE"] = "None"
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
     if config:
         app.config.update(config)
 

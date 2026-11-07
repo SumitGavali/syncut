@@ -3,7 +3,7 @@ import type { Segment, SyncCutProject } from '@/store/useStore';
 import type { Project, ProjectStatus } from '@/store/useProjectStore';
 import type { EditorClip } from '@/store/useEditorStore'; // <-- IMPORT ADDED
 
-const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE ?? '' });
+const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE ?? '', withCredentials: true, });
 
 // Attach Authorization Bearer token automatically if logged in
 http.interceptors.request.use((config) => {
