@@ -10,10 +10,12 @@ platformdirs
 celery>=5.5
 redis
 celery[redis]
-onnxruntimetask.pu
+onnxruntime
 opencv-python
 librosa
 reportlab
 SQLAlchemy>=2.0,<3.0
 psycopg2-binary>=2.9,<3.0
 stripe>=10.0,<17.0
+boto3
+python-dotenv
