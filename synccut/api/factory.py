@@ -31,8 +31,8 @@ from synccut.paths import (
 )
 
 
+# Default origins for local development
 DEFAULT_CORS_ORIGINS = [
-    "https://snycut-site-ten.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -92,7 +92,16 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
 
-    cors_origins = list(app.config.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS))
+    # --- DYNAMIC CORS CONFIGURATION ---
+    # Read the allowed origins from an environment variable. If not set, use the local dev defaults.
+    # This allows you to whitelist your live Vercel URL without modifying the source code.
+    env_origins = os.environ.get("CORS_ORIGINS", "")
+    if env_origins:
+        cors_origins = [origin.strip() for origin in env_origins.split(",") if origin.strip()]
+    else:
+        cors_origins = list(DEFAULT_CORS_ORIGINS)
+
+    # Also add the STUDIO_URL if it's not already in the list
     studio_origin = app.config["STUDIO_URL"].rstrip("/")
     if studio_origin and studio_origin not in cors_origins:
         cors_origins.append(studio_origin)
@@ -102,6 +111,9 @@ def create_app(config: dict | None = None) -> Flask:
         resources={
             r"/api/*": {
                 "origins": cors_origins,
+                "supports_credentials": True,  # Allows cookies and Authorization headers
+                "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "Authorization"],
             }
         },
     )
