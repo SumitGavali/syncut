@@ -12,6 +12,7 @@ redis
 celery[redis]
 onnxruntime
 opencv-python-headless
+opencv-python
 librosa
 reportlab
 SQLAlchemy>=2.0,<3.0

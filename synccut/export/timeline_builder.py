@@ -227,11 +227,31 @@ def get_audio_info(file_path):
     except ValueError:
         return True, 2, 48000
 
-
 def export_timeline(timeline, output_path):
     """Export to FCPXML (or other) and apply required patches."""
-    otio.adapters.write_to_file(timeline, output_path)
+    if output_path.lower().endswith(".edl"):
+        # WHY: OTIO doesn't have a built-in EDL adapter. We write a basic CMX 3600 EDL manually.
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("TITLE: SyncCut Export\nFCM: NON-DROP FRAME\n\n")
+            edit_num = 1
+            for track in timeline.tracks:
+                if track.name == "PROGRAM":
+                    for clip in track:
+                        if isinstance(clip, otio.schema.Clip):
+                            # EDL timecode format: HH:MM:SS:FF
+                            start_sec = clip.range_in_parent().start_time.to_seconds()
+                            end_sec = start_sec + clip.range_in_parent().duration.to_seconds()
+                            start_tc = f"00:00:{int(start_sec)//60:02d}:{int(start_sec)%60:02d}:{int((start_sec%1)*25):02d}"
+                            end_tc = f"00:00:{int(end_sec)//60:02d}:{int(end_sec)%60:02d}:{int((end_sec%1)*25):02d}"
+                            f.write(f"{edit_num:03d}  AX       V     C        {start_tc} {end_tc} {start_tc} {end_tc}\n")
+                            f.write(f"* FROM CLIP NAME: {clip.name}\n\n")
+                            edit_num += 1
+        print(f"\nExported EDL: {output_path}")
+        return
 
+    # Default OTIO export for FCPXML/AAF
+    otio.adapters.write_to_file(timeline, output_path)
+    
     if output_path.lower().endswith(".fcpxml"):
         _fix_asset_audio_attributes(output_path)
         _add_audio_components(output_path)
