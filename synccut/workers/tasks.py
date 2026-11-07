@@ -31,12 +31,27 @@ def _master_audio_url(session_id: str) -> str:
 def _single_camera_fallback(cameras: list, duration: float) -> list:
     if duration <= 0:
         return []
-    return [{
-        "camera": cameras[0] if cameras else "Camera A",
-        "start": 0.0,
-        "end": round(duration, 2),
-        "confidence": 0.0,
-    }]
+    
+    # WHY: If AI fails, we generate a fake alternating sequence every 5 seconds
+    # so the NLE timeline still populates with distinct, editable clips.
+    fallback_segments = []
+    chunk_size = 5.0
+    current_time = 0.0
+    cam_index = 0
+    
+    while current_time < duration:
+        end_time = min(current_time + chunk_size, duration)
+        fallback_segments.append({
+            "camera": cameras[cam_index % len(cameras)] if cameras else "Camera A",
+            "start": round(current_time, 2),
+            "end": round(end_time, 2),
+            "confidence": 0.0,
+            "reason": "Fallback sequence (AI model missing)"
+        })
+        current_time += chunk_size
+        cam_index += 1
+        
+    return fallback_segments
 
 
 def _report(task, stage: str, percent: int, status: str):

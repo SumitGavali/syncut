@@ -10,8 +10,7 @@ platformdirs
 celery>=5.5
 redis
 celery[redis]
-onnxruntime
-opencv-python-headless
+onnxruntimetask.pu
 opencv-python
 librosa
 reportlab
