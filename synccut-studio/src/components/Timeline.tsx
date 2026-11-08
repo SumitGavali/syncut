@@ -151,19 +151,34 @@ export default function Timeline({ onCommitClips }: TimelineProps) {
     onCommitClips(useEditorStore.getState().clips);
   };
 
+  // 🚨 FIXED: The Event Listener Bug
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       if (target instanceof HTMLElement &&
         (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
+
+      // Access the store directly to avoid stale closures and prevent the listener from re-binding 60 times a second
+      const store = useEditorStore.getState();
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
-        event.shiftKey ? handleRedo() : handleUndo();
+        if (event.shiftKey) {
+          store.redo();
+          onCommitClips(store.clips);
+        } else {
+          store.undo();
+          onCommitClips(store.clips);
+        }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
         event.preventDefault();
-        handleRedo();
+        store.redo();
+        onCommitClips(store.clips);
       } else if (event.key === 'Delete' || event.key === 'Backspace') {
-        handleDelete();
+        if (store.activeClipId) {
+          store.deleteClip(store.activeClipId);
+          onCommitClips(store.clips);
+        }
       } else if (event.key.toLowerCase() === 's') {
         setTool('blade');
       } else if (event.key.toLowerCase() === 'v') {
@@ -172,7 +187,7 @@ export default function Timeline({ onCommitClips }: TimelineProps) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeClipId, clips, playheadPosition, redo, undo, onCommitClips]);
+  }, [onCommitClips]); // Now only depends on the stable callback passed from Workspace
 
   const tickStep = useMemo(() => {
     const candidates = [5, 10, 15, 30, 60, 120, 300, 600];

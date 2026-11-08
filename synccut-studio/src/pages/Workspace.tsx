@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import {
   AudioLines, ChevronDown, CircleHelp, Clapperboard, Download, FilePlus2, Film,
-  FolderOpen, Gauge, Music2, Redo2, Save, Undo2, WandSparkles,
+  FolderOpen, Gauge, Music2, Redo2, Save, Undo2, WandSparkles, LogOut, User as UserIcon, Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ProgramMonitor from '@/components/ProgramMonitor';
@@ -15,6 +15,7 @@ import { useProjectStore } from '@/store/useProjectStore';
 import { useStore, type CameraSync, type PipelineStage, type Segment } from '@/store/useStore';
 import { useEditorStore, type EditorClip } from '@/store/useEditorStore';
 import { getJobStatus, getSessionMediaUrl, loadSessionProject, saveSessionProject, uploadFiles } from '@/lib/api';
+import { useAuthStore } from '@/store/useAuthStore';
 
 const CAMERA_COLORS = ['#06b6d4', '#a855f7', '#f97316', '#ec4899', '#22c55e', '#eab308', '#3b82f6', '#14b8a6'];
 const MEDIA_ACCEPT = 'video/*,audio/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,.mts,.m2ts,.ts,.mpg,.mpeg,.3gp,.wmv,.mp3,.wav,.m4a,.aac,.flac,.ogg';
@@ -100,7 +101,7 @@ function buildEditorClips(segments: Segment[], cameras: CameraSync[], sources: s
   });
 }
 
-function MediaPool({ onImport, importing, fileInputRef }: { onImport: (files: File[]) => void; importing: boolean; fileInputRef: React.RefObject<HTMLInputElement>; }) {
+function MediaPool({ onImport, onRemove, importing, fileInputRef, isReady }: { onImport: (files: File[]) => void; onRemove: (index: number) => void; importing: boolean; fileInputRef: React.RefObject<HTMLInputElement>; isReady: boolean; }) {
   const [tab, setTab] = useState<MediaTab>('Media');
   const sources = useStore((state) => state.allSources);
   const files = useStore((state) => state.files);
@@ -135,7 +136,7 @@ function MediaPool({ onImport, importing, fileInputRef }: { onImport: (files: Fi
       </div>
 
       <div className="p-3">
-        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing} data-tour="media-import" className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-accent/50 bg-accent/10 text-sm font-semibold text-accent transition hover:bg-accent/20 disabled:opacity-50">
+        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing || isReady} data-tour="media-import" className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-accent/50 bg-accent/10 text-sm font-semibold text-accent transition hover:bg-accent/20 disabled:opacity-50">
           <FilePlus2 size={16} /> {importing ? 'Importing…' : 'Import Media'}
         </button>
         <input ref={fileInputRef} type="file" multiple accept={MEDIA_ACCEPT} onChange={(event) => { const selected = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; onImport(selected); }} className="hidden" />
@@ -150,20 +151,27 @@ function MediaPool({ onImport, importing, fileInputRef }: { onImport: (files: Fi
         ) : rows.length ? (
           <div className="space-y-1">
             {rows.map((row) => (
-              <button key={`${row.index}-${row.source}`} type="button" onClick={() => { setSelectedSourceIndex(row.index); setActiveClip(null); setPlayhead(0); }} className={`group flex w-full items-center gap-3 rounded-md border p-2 text-left transition ${selectedSourceIndex === row.index ? 'border-accent/40 bg-accent/10' : 'border-transparent hover:border-border hover:bg-panel'}`}>
-                <div className="relative h-[56px] w-[84px] shrink-0 overflow-hidden rounded border border-white/10 bg-background">
-                  {!row.isAudio && <video src={row.source} muted preload="metadata" onLoadedMetadata={(event) => { const video = event.currentTarget; if (video.duration > 0) video.currentTime = Math.min(0.1, video.duration / 2); }} className="h-full w-full object-cover" />}
-                  {row.isAudio && <Music2 size={20} className="absolute inset-0 m-auto text-accent" />}
-                  <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-bold text-white">{String.fromCharCode(65 + row.index)}</span>
-                </div>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-text">{row.name}</span>
-                  <span className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
-                    {row.isAudio ? <AudioLines size={12} /> : <Film size={12} />}
-                    {formatDuration(row.duration)}
+              <div key={`${row.index}-${row.source}`} className={`relative group w-full flex items-center rounded-md border transition ${selectedSourceIndex === row.index ? 'border-accent/40 bg-accent/10' : 'border-transparent hover:border-border hover:bg-panel'}`}>
+                <button type="button" onClick={() => { setSelectedSourceIndex(row.index); setActiveClip(null); setPlayhead(0); }} className="flex w-full items-center gap-3 p-2 text-left">
+                  <div className="relative h-[56px] w-[84px] shrink-0 overflow-hidden rounded border border-white/10 bg-background">
+                    {!row.isAudio && <video src={row.source} muted preload="metadata" onLoadedMetadata={(event) => { const video = event.currentTarget; if (video.duration > 0) video.currentTime = Math.min(0.1, video.duration / 2); }} className="h-full w-full object-cover" />}
+                    {row.isAudio && <Music2 size={20} className="absolute inset-0 m-auto text-accent" />}
+                    <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-bold text-white">{String.fromCharCode(65 + row.index)}</span>
+                  </div>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-text">{row.name}</span>
+                    <span className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
+                      {row.isAudio ? <AudioLines size={12} /> : <Film size={12} />}
+                      {formatDuration(row.duration)}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                {!isReady && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(row.index); }} className="absolute right-2 top-1/2 -translate-y-1/2 hidden rounded p-1.5 text-muted hover:bg-rose-500/20 hover:text-rose-400 group-hover:block" title="Remove clip">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         ) : (
@@ -283,7 +291,9 @@ export default function Workspace() {
   const { projectId } = useParams<{ projectId: string }>();
   const { projects, updateProjectStatus } = useProjectStore();
   const currentProject = projects.find((project) => project.id === projectId) ?? { id: projectId ?? 'default-project', name: 'Wedding Ceremony', cameraCount: 0, status: 'Draft' };
-  
+
+  const { user, logout } = useAuthStore();
+
   const sessionId = useStore((state) => state.sessionId);
   const jobId = useStore((state) => state.jobId);
   const files = useStore((state) => state.files);
@@ -311,6 +321,7 @@ export default function Workspace() {
   // Sync segments to editor clips
   const editorClips = useMemo(() => buildEditorClips(segments, cameras, allSources), [segments, cameras, allSources]);
   useEffect(() => { setClips(editorClips); }, [editorClips, setClips]);
+
   useEffect(() => {
     if (!pendingTimelineCelebration.current || pipeline.stage !== 'ready' || editorClips.length === 0) return;
     pendingTimelineCelebration.current = false;
@@ -353,10 +364,12 @@ export default function Workspace() {
         if (!active) return;
         const state = useStore.getState();
         state.loadProjectFile(project);
+
+        // THIS IS THE FIX: Re-hydrate the video URLs from the backend
         const sources = project.cameras.map((_, index) => getSessionMediaUrl(projectId, index));
         state.setAllSources(sources);
         state.setDuration(Math.max(0, ...project.cameras.map((camera) => camera.offset_s + (camera.duration_sec ?? 0))));
-        
+
         // Immediately rehydrate the editor clips so the timeline populates instantly on load
         const restoredClips = buildEditorClips(project.program, project.cameras, sources);
         useEditorStore.getState().setClips(restoredClips);
@@ -403,8 +416,30 @@ export default function Workspace() {
       };
     }));
   }, []);
+
   const handleEditorUndo = () => { undo(); commitEditorClips(useEditorStore.getState().clips); };
   const handleEditorRedo = () => { redo(); commitEditorClips(useEditorStore.getState().clips); };
+
+  const handleRemoveFile = (index: number) => {
+    const state = useStore.getState();
+    const newFiles = [...state.files];
+    const newSources = [...state.allSources];
+    const newCameras = [...state.syncData];
+
+    newFiles.splice(index, 1);
+    newSources.splice(index, 1);
+    newCameras.splice(index, 1);
+
+    state.setFiles(newFiles);
+    state.setAllSources(newSources);
+    state.setSyncData(newCameras);
+
+    // Reset timeline if we remove a file before sync
+    if (newSources.length === 0) {
+      state.setSegments([]);
+      useEditorStore.getState().setClips([]);
+    }
+  };
 
   const handleImport = async (selected: File[]) => {
     if (!selected.length) return;
@@ -475,14 +510,14 @@ export default function Workspace() {
           const suggested: Segment[] = Array.isArray(response?.segments) ? response.segments : [];
           const program = buildProgramDraft(suggested, syncData);
           if (!program.length) pendingTimelineCelebration.current = false;
-          
+
           state.setSyncData(syncData);
           state.setSuggestedSegments(suggested);
           state.setSegments(program);
           state.setDuration(Math.max(0, ...syncData.map((camera) => Number(camera.offset_s ?? 0) + Number(camera.duration_sec ?? 0))));
-          
+
           if (response?.master_audio_url) state.setMasterAudioUrl(response.master_audio_url);
-          
+
           const elapsed = state.syncStartedAt ? Math.max(1, Math.round((Date.now() - state.syncStartedAt) / 1000)) : 0;
           state.setSyncReport({
             totalSyncSeconds: elapsed, cameraCount: syncData.length,
@@ -560,12 +595,26 @@ export default function Workspace() {
           <button type="button" title="Redo" onClick={handleEditorRedo} disabled={!redoStack.length} className="hidden h-8 w-8 place-items-center rounded text-muted hover:bg-white/5 disabled:opacity-30 sm:grid"><Redo2 size={16} /></button>
           <Button type="button" size="sm" onClick={handleSaveProject} disabled={!cameraCount} className="h-9 bg-accent px-3 text-xs font-bold text-[#0a0a0c] hover:brightness-110 disabled:bg-border disabled:text-muted"><Save size={14} className="mr-2" /> Save Project</Button>
           <Button type="button" size="sm" onClick={() => setExportOpen(true)} disabled={!isReady} data-tour="export-button" className="h-9 bg-accent px-4 text-xs font-bold text-[#0a0a0c] hover:brightness-110 disabled:bg-border disabled:text-muted"><Download size={14} className="mr-2" /> Export</Button>
-          <button type="button" aria-label="Workspace tour" onClick={() => setTourRun(true)} className="grid h-8 w-8 place-items-center rounded-full bg-[#233451] text-xs font-bold text-text hover:bg-[#2e466b]">S</button>
+
+          {/* PROFILE DROPDOWN */}
+          <div className="relative group ml-2">
+            <button className="flex items-center gap-2 rounded-full border border-border bg-panel p-1 pr-3 hover:bg-white/5">
+              <div className="grid h-7 w-7 place-items-center rounded-full bg-accent text-[#07191d] font-bold">
+                {user?.name?.charAt(0).toUpperCase() || 'G'}
+              </div>
+              <span className="text-xs font-medium text-text">{user?.name || 'Guest'}</span>
+            </button>
+            <div className="absolute right-0 mt-1 hidden w-48 flex-col rounded-md border border-border bg-panel p-1 shadow-xl group-hover:flex z-50">
+              <button onClick={() => logout()} className="flex items-center gap-2 rounded px-3 py-2 text-left text-xs text-rose-400 hover:bg-white/5">
+                <LogOut size={14} /> Log out
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
       <main className="grid min-h-0 grid-cols-[280px_minmax(0,1fr)_320px] overflow-hidden">
-        <MediaPool onImport={handleImport} importing={isUploading} fileInputRef={fileInputRef} />
+        <MediaPool onImport={handleImport} onRemove={handleRemoveFile} importing={isUploading} fileInputRef={fileInputRef} isReady={isReady} />
         <ProgramMonitor />
         <Inspector />
       </main>

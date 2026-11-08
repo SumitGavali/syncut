@@ -7,12 +7,12 @@ export default {
         background: '#0a0a0c', // Midnight Black
         panel: '#141418', // Dark Grey Panel
         border: '#2a2a32', // Metallic Border
-        accent: '#06b6d4', // Cyan / Neon Blue
-        text: '#ededed', // Pure White Text
-        muted: '#a1a1aa', // Grey Text
+        accent: '#06b6d4', 'accent-hover': '#22d3ee',
+        text: '#ededed',
+        muted: '#a1a1aa',
       },
       fontFamily: {
-        sans: ['"Barlow Semi Condensed"', 'system-ui', 'sans-serif'],
+        sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
     },

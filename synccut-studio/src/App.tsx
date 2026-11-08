@@ -90,11 +90,9 @@ const AnimatedRoutes: React.FC = () => {
         <Route
           path="/workspace/:projectId"
           element={
-            <ProtectedRoute>
               <PageTransition>
                 <Workspace />
               </PageTransition>
-            </ProtectedRoute>
           }
         />
 

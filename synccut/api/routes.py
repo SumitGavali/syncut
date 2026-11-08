@@ -37,7 +37,6 @@ from synccut.core.sync_core import sync_files
 from synccut.export.fcp7_exporter import export_fcp7_xml
 from synccut.export.timeline_builder import build_timeline, export_timeline
 from synccut.paths import get_sessions_dir, get_base_dir, get_ffmpeg_path
-from synccut.api.tier_limits import check_tier_limits
 
 bp = Blueprint("synccut", __name__)
 ALLOWED_MEDIA_EXTENSIONS = {
@@ -53,7 +52,7 @@ SESSIONS: dict = {}
 def _get_current_user():
     auth_header = request.headers.get("Authorization", "")
     token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
-    # THE FIX: Allow the token to be passed as a URL parameter for <video> tags
+    # Allow the token to be passed as a URL parameter for <video> tags
     token = token or request.args.get("token", "") or session.get("auth_token", "")
     if not token:
         return None
@@ -235,7 +234,6 @@ def new_session():
 
 @bp.route("/api/sync", methods=["POST"])
 @require_auth
-@check_tier_limits("upload")
 def run_sync():
     """
     Global multi-source sync.
@@ -290,17 +288,6 @@ def run_sync():
         for path in saved_paths:
             os.remove(path)
         return jsonify({"error": f"Could not save uploaded media: {error}"}), 400
-    from synccut.core.quota import enforce_limits
-    try:
-        enforce_limits(user["id"], target_paths)
-    except PermissionError as error:
-        for path in saved_paths:
-            os.remove(path)
-        return jsonify({"error": str(error)}), 403
-    except ValueError as error:
-        for path in saved_paths:
-            os.remove(path)
-        return jsonify({"error": str(error)}), 400
     state["reference_path"] = ref_path
     state["input_paths"] = input_paths
     state["media_dir"] = sdir
@@ -381,7 +368,6 @@ def run_sync():
 
 @bp.route("/api/sync_async", methods=["POST"])
 @require_auth
-@check_tier_limits("upload")
 def run_sync_async():
     # Check both form data (for files) and JSON (for simple triggers)
     data = request.get_json(silent=True) or request.form
@@ -424,7 +410,6 @@ def run_sync_async():
         ref_path = target_paths[0]
         input_paths = target_paths[1:]
     else:
-        uploaded_paths = []
         # Fallback: Use the files already uploaded in the /api/upload step
         import glob
         all_files = glob.glob(os.path.join(sdir, "*.mp4"))
@@ -432,18 +417,6 @@ def run_sync_async():
             return jsonify({"error": "Need at least 2 videos to sync"}), 400
         ref_path = all_files[0]
         input_paths = all_files[1:]
-
-    from synccut.core.quota import enforce_limits
-    try:
-        enforce_limits(user["id"], [ref_path, *input_paths])
-    except PermissionError as error:
-        for path in uploaded_paths:
-            os.remove(path)
-        return jsonify({"error": str(error)}), 403
-    except ValueError as error:
-        for path in uploaded_paths:
-            os.remove(path)
-        return jsonify({"error": str(error)}), 400
 
     try:
         from synccut.workers.tasks import run_sync_task
@@ -711,7 +684,6 @@ def _run_local_full_pipeline_job(job_id: str, session_id: str, file_paths: list)
 
 @bp.route("/api/upload", methods=["POST"])
 @require_auth
-@check_tier_limits("upload")
 def upload_files():
     """Validate and ingest 2-8 supported media files for the authenticated user."""
     session_id = request.form.get("session_id")
@@ -752,7 +724,6 @@ def upload_files():
             return jsonify({"error": "This upload session already contains files and cannot be claimed."}), 403
         with open(owner_path, "w", encoding="utf-8") as owner_file:
             json.dump({"user_id": user["id"]}, owner_file)
-    from synccut.core.quota import enforce_limits
 
     final_paths = [
         os.path.join(sdir, f"{index:02d}_{filename}")
@@ -782,12 +753,6 @@ def upload_files():
                 ):
                     media_paths.append(entry.path)
         media_paths.extend(staged_paths)
-        try:
-            enforce_limits(user["id"], media_paths)
-        except PermissionError as error:
-            return jsonify({"error": str(error)}), 403
-        except ValueError as error:
-            return jsonify({"error": str(error)}), 400
 
         backups = {}
         moved_paths = []
@@ -810,7 +775,6 @@ def upload_files():
         saved_paths = final_paths
 
     # Trigger Master Full Pipeline Task (Celery or fallback)
-        # Trigger Master Full Pipeline Task (Celery or fallback)
     try:
         from synccut.workers.tasks import full_pipeline_task
         from synccut.workers.job_control import redis_client
@@ -1158,7 +1122,6 @@ def download_report_csv():
 
 @bp.route("/api/export/timeline", methods=["POST"])
 @require_auth
-@check_tier_limits("export")
 def export_timeline_route():
     """Export offset-aligned timeline (FCPXML, Premiere XML, AAF, or Audit PDF)."""
     data = request.get_json(silent=True) or {}
@@ -1325,7 +1288,6 @@ def export_timeline_route():
 
 @bp.route("/api/switches", methods=["POST"])
 @require_auth
-@check_tier_limits("ai_cuts")
 def analyze_switches_route():
     """Generate camera switch rough cut using ASD pipeline."""
     data = request.get_json(force=True)
@@ -1434,7 +1396,6 @@ def patch_timeline(project_id):
 
 @bp.route("/api/export/switch-timeline", methods=["POST"])
 @require_auth
-@check_tier_limits("ai_cuts")
 def export_switch_timeline_route():
     """Export rough cut FCPXML."""
     data = request.get_json(force=True)
@@ -1487,6 +1448,8 @@ def auth_register():
         session["auth_token"] = user["token"]
         return jsonify({"user": user, "token": user["token"]}), 201
     except Exception as e:
+        if "UNIQUE constraint failed" in str(e) or "users.email" in str(e):
+            return jsonify({"error": "An account with this email already exists. Please log in instead."}), 409
         return jsonify({"error": f"Registration failed: {str(e)}"}), 400
 
 
