@@ -5,9 +5,12 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import mimetypes
 import os
 import re
+import shutil
+import smtplib
 import subprocess
 import threading
 import traceback
@@ -17,18 +20,9 @@ from tempfile import TemporaryDirectory
 from functools import wraps
 
 from flask import Blueprint, current_app, g, jsonify, redirect, render_template, request, send_file, session
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.utils import secure_filename
 
-from synccut.workers.tasks import run_sync_task, generate_proxies_task
-from synccut.workers.celery_app import celery_app
-from synccut.workers.job_control import (
-    JobCancelled,
-    get_last_progress,
-    redis_client,
-    request_cancel,
-    clear_partial_audio,
-)
-from celery.result import AsyncResult
 from synccut.ai.rough_cut import export_roughcut_fcpxml, generate_active_speaker_roughcut
 from synccut.core.confidence import badge_and_status_from_confidence
 from synccut.core.robustness import preflight_media_check
@@ -39,20 +33,25 @@ from synccut.export.timeline_builder import build_timeline, export_timeline
 from synccut.paths import get_sessions_dir, get_base_dir, get_ffmpeg_path
 
 bp = Blueprint("synccut", __name__)
+logger = logging.getLogger(__name__)
 ALLOWED_MEDIA_EXTENSIONS = {
     ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts", ".m2ts",
     ".ts", ".mpg", ".mpeg", ".3gp", ".wmv", ".mp3", ".wav", ".m4a",
     ".aac", ".flac", ".ogg",
 }
 
-# In-memory session store — keyed per browser session (single-worker only).
 SESSIONS: dict = {}
+LOCAL_JOBS: dict = {}
+LOCAL_CANCEL_EVENTS: dict = {}
+
+
+class JobCancelled(RuntimeError):
+    """Raised when a locally running pipeline job is cancelled."""
 
 
 def _get_current_user():
     auth_header = request.headers.get("Authorization", "")
     token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
-    # Allow the token to be passed as a URL parameter for <video> tags
     token = token or request.args.get("token", "") or session.get("auth_token", "")
     if not token:
         return None
@@ -126,7 +125,6 @@ def _claim_session(session_id: str, user_id: str):
 
 
 def get_session(session_id):
-    """Retrieve session or initialize gracefully if server restarted."""
     if not session_id:
         return None
     if session_id not in SESSIONS:
@@ -176,53 +174,9 @@ def _owned_session_dir(session_id: str):
     return sdir, None
 
 
-@bp.route("/")
-def landing():
-    return render_template("index.html")
-
-
-@bp.route("/login", methods=["GET", "POST"])
-def browser_login():
-    if request.method == "POST":
-        email = request.form.get("email", "").strip()
-        password = request.form.get("password", "")
-        if email and password:
-            from synccut.api.db import authenticate_user
-            user = authenticate_user(email, password)
-            if user:
-                session["auth_token"] = user["token"]
-                return redirect("/app")
-        return render_template("login.html", error="Invalid email or password.", studio_url=_studio_url())
-    return render_template("login.html", studio_url=_studio_url())
-
-
-def _studio_url() -> str:
-    return current_app.config.get("STUDIO_URL", "http://localhost:5173")
-
-
-@bp.route("/app")
-def dashboard():
-    if not _get_current_user():
-        return redirect("/login")
-    return render_template("dashboard.html")
-
-
-@bp.route("/api/waitlist", methods=["POST"])
-def waitlist_signup():
-    """Handle early access / beta waitlist signup requests."""
-    try:
-        data = request.get_json(silent=True) or request.form.to_dict()
-        email = data.get("email", "").strip()
-        nle = data.get("nle", "").strip()
-        cameras = data.get("cameras", "").strip()
-        log_dir = os.path.join(_app_root(), "uploads")
-        os.makedirs(log_dir, exist_ok=True)
-        waitlist_file = os.path.join(log_dir, "waitlist.jsonl")
-        with open(waitlist_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"email": email, "nle": nle, "cameras": cameras}) + "\n")
-        return jsonify({"status": "ok", "message": "Successfully added to beta waitlist."})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+@bp.route("/api/health")
+def health():
+    return {"status": "ok"}
 
 
 @bp.route("/api/session", methods=["POST"])
@@ -230,215 +184,6 @@ def new_session():
     session_id = uuid.uuid4().hex[:12]
     get_session(session_id)
     return jsonify({"session_id": session_id})
-
-
-@bp.route("/api/sync", methods=["POST"])
-@require_auth
-def run_sync():
-    """
-    Global multi-source sync.
-    Accepts: reference file, N input files, sync_mode, drift_correct flag.
-    Returns: sync report JSON with calibrated confidence badges and drift info.
-    """
-    session_id = request.form.get("session_id")
-    user = _get_current_user()
-    sdir, ownership_error = _claim_session(session_id, user["id"])
-    if ownership_error:
-        return ownership_error
-    state = get_session(session_id)
-    if not state:
-        return jsonify({"error": "Invalid or missing session_id"}), 400
-
-    reference_file = request.files.get("reference")
-    input_files = request.files.getlist("inputs")
-    if not reference_file or not input_files:
-        return jsonify({"error": "A reference file and at least one source file are required."}), 400
-    incoming_files = [reference_file, *input_files]
-    if not 2 <= len(incoming_files) <= 8:
-        return jsonify({"error": "Select between 2 and 8 media files."}), 400
-
-    meta_raw = request.form.get("metadata")
-    client_meta = {}
-    if meta_raw:
-        try:
-            client_meta = json.loads(meta_raw)
-        except Exception:
-            client_meta = {}
-
-    ref_orig_name = client_meta.get("reference_name") or reference_file.filename
-    input_orig_names = client_meta.get("input_names", [])
-    filenames = []
-    for uploaded_file in incoming_files:
-        filename = secure_filename(uploaded_file.filename)
-        if not filename or os.path.splitext(filename)[1].lower() not in ALLOWED_MEDIA_EXTENSIONS:
-            return jsonify({"error": f"Unsupported media file: {uploaded_file.filename or 'unnamed file'}."}), 415
-        filenames.append(filename)
-    target_paths = [os.path.join(sdir, filename) for filename in filenames]
-    if len(set(target_paths)) != len(target_paths) or any(os.path.exists(path) for path in target_paths):
-        return jsonify({"error": "This session already contains that file; use a new session."}), 409
-
-    ref_path = target_paths[0]
-    input_paths = target_paths[1:]
-    saved_paths = []
-    try:
-        for uploaded_file, target_path in zip(incoming_files, target_paths):
-            uploaded_file.save(target_path)
-            saved_paths.append(target_path)
-    except OSError as error:
-        for path in saved_paths:
-            os.remove(path)
-        return jsonify({"error": f"Could not save uploaded media: {error}"}), 400
-    state["reference_path"] = ref_path
-    state["input_paths"] = input_paths
-    state["media_dir"] = sdir
-
-    try:
-        all_paths = [ref_path] + input_paths
-        labels = ["Reference"] + [
-            f"Camera {chr(64 + i)}" if i <= 26 else f"Source {i}"
-            for i in range(1, len(all_paths))
-        ]
-        sync_result = sync_files(
-            all_paths,
-            cache_dir=os.path.join(sdir, "_sync_audio"),
-            names=labels,
-        )
-        cameras = sync_result["cameras"]
-        all_files = [os.path.basename(ref_orig_name)] + [
-            os.path.basename(input_orig_names[i]) if i < len(input_orig_names)
-            else os.path.basename(path)
-            for i, path in enumerate(input_paths)
-        ]
-        results = []
-        for idx, label in enumerate(labels):
-            camera = cameras[label]
-            drift_ppm = camera["drift_ppm"]
-            drift_ms_per_hour = drift_ppm * 3.6
-            confidence = camera["link_confidence"]
-            badge, status = badge_and_status_from_confidence(confidence, drift_ms_per_hour)
-            results.append({
-                "source": label,
-                "file": all_files[idx],
-                "offset_s": camera["offset_s"],
-                "offset_sec": camera["offset_s"],
-                "drift_ppm": drift_ppm,
-                "drift_ms_per_hour": drift_ms_per_hour,
-                "confidence": confidence,
-                "link_confidence": confidence,
-                "badge": badge,
-                "status": status,
-                "robustness_flags": [],
-            })
-
-        state["all_signals"] = []
-        state["fs"] = 16000
-        state["report_results"] = results
-        report_path = os.path.join(sdir, "sync_report.json")
-        with open(report_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "cameras": cameras,
-                "loop_error_s": sync_result["loop_error_s"],
-                "rows": sync_result["rows"],
-                "results": results,
-            }, f, indent=2)
-        state["report_json_path"] = report_path
-
-        try:
-            from synccut.media.mixdown import build_master_mixdown
-            build_master_mixdown(
-                sync_result["audio_paths"],
-                [cameras[name]["offset_s"] for name in labels],
-                os.path.join(sdir, "master_mix.wav"),
-                target_sr=16000,
-            )
-        except Exception:
-            current_app.logger.exception("Master mixdown failed")
-
-        return jsonify({
-            "results": results,
-            "rows": sync_result["rows"],
-            "cameras": cameras,
-            "loop_error_s": sync_result["loop_error_s"],
-        })
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
-@bp.route("/api/sync_async", methods=["POST"])
-@require_auth
-def run_sync_async():
-    # Check both form data (for files) and JSON (for simple triggers)
-    data = request.get_json(silent=True) or request.form
-    session_id = data.get("session_id")
-
-    if not session_id:
-        return jsonify({"error": "Missing session_id"}), 400
-
-    user = _get_current_user()
-    sdir, ownership_error = _claim_session(session_id, user["id"])
-    if ownership_error:
-        return ownership_error
-
-    # If React sends files again, save them. Otherwise, look in the directory.
-    reference_file = request.files.get("reference")
-    input_files = request.files.getlist("inputs")
-
-    if reference_file and input_files:
-        incoming_files = [reference_file, *input_files]
-        if not 2 <= len(incoming_files) <= 8:
-            return jsonify({"error": "Select between 2 and 8 media files."}), 400
-        filenames = []
-        for uploaded_file in incoming_files:
-            filename = secure_filename(uploaded_file.filename)
-            if not filename or os.path.splitext(filename)[1].lower() not in ALLOWED_MEDIA_EXTENSIONS:
-                return jsonify({"error": f"Unsupported media file: {uploaded_file.filename or 'unnamed file'}."}), 415
-            filenames.append(filename)
-        target_paths = [os.path.join(sdir, filename) for filename in filenames]
-        if len(set(target_paths)) != len(target_paths) or any(os.path.exists(path) for path in target_paths):
-            return jsonify({"error": "This session already contains that file; use a new session."}), 409
-        uploaded_paths = []
-        try:
-            for uploaded_file, target_path in zip(incoming_files, target_paths):
-                uploaded_file.save(target_path)
-                uploaded_paths.append(target_path)
-        except OSError as error:
-            for path in uploaded_paths:
-                os.remove(path)
-            return jsonify({"error": f"Could not save uploaded media: {error}"}), 400
-        ref_path = target_paths[0]
-        input_paths = target_paths[1:]
-    else:
-        # Fallback: Use the files already uploaded in the /api/upload step
-        import glob
-        all_files = glob.glob(os.path.join(sdir, "*.mp4"))
-        if len(all_files) < 2:
-            return jsonify({"error": "Need at least 2 videos to sync"}), 400
-        ref_path = all_files[0]
-        input_paths = all_files[1:]
-
-    try:
-        from synccut.workers.tasks import run_sync_task
-        task = run_sync_task.delay(session_id, {}, ref_path, input_paths)
-        return jsonify({"job_id": task.id}), 202
-    except Exception:
-        import threading
-        job_id = f"local-sync-{uuid.uuid4().hex[:12]}"
-        LOCAL_JOBS[job_id] = {"status": "PENDING"}
-        LOCAL_CANCEL_EVENTS[job_id] = threading.Event()
-        t = threading.Thread(
-            target=_run_local_sync_job,
-            args=(job_id, session_id, ref_path, input_paths),
-            daemon=True,
-        )
-        t.start()
-        return jsonify({"job_id": job_id}), 202
-
-
-# In-memory local task registry for fallback when Redis is offline
-LOCAL_JOBS: dict = {}
-LOCAL_CANCEL_EVENTS: dict = {}
 
 
 def _store_local_progress(job_id: str, current, total, status: str):
@@ -457,75 +202,12 @@ def _store_local_progress(job_id: str, current, total, status: str):
     LOCAL_JOBS[job_id] = {"status": "PROGRESS", "metadata": metadata}
 
 
-def _run_local_proxy_job(job_id: str, session_id: str, file_paths: list):
-    try:
-        from synccut.media.proxy_gen import generate_proxy
-        proxy_dir = os.path.join(get_sessions_dir(), session_id, "proxies")
-        LOCAL_JOBS[job_id] = {
-            "status": "PROGRESS",
-            "metadata": {"current": 0, "total": len(file_paths), "status": "Starting proxies"},
-        }
-        results = []
-        for idx, path in enumerate(file_paths):
-            LOCAL_JOBS[job_id]["metadata"] = {
-                "current": idx + 1,
-                "total": len(file_paths),
-                "status": f"Processing {os.path.basename(path)}",
-            }
-            try:
-                proxy_path = generate_proxy(path, proxy_dir)
-                results.append({"original": path, "proxy": proxy_path})
-            except Exception:
-                pass
-        LOCAL_JOBS[job_id] = {
-            "status": "SUCCESS",
-            "result": {"status": "Proxy generation complete", "proxies": results},
-        }
-    except Exception as e:
-        LOCAL_JOBS[job_id] = {"status": "FAILURE", "metadata": {"status": str(e)}}
-
-
-def _run_local_sync_job(job_id: str, session_id: str, ref_path: str, input_paths: list):
-    cancel_event = LOCAL_CANCEL_EVENTS.setdefault(job_id, threading.Event())
-
-    def check_local_cancel():
-        if cancel_event.is_set():
-            raise JobCancelled(f"Job {job_id} was cancelled.")
-
-    def report_progress(current, total, status):
-        check_local_cancel()
-        _store_local_progress(job_id, current, total, status)
-
-    try:
-        report_progress(None, None, "Decoding camera audio")
-        result = run_sync_task(
-            session_id,
-            {},
-            ref_path,
-            input_paths,
-            progress_callback=report_progress,
-            cancel_check=check_local_cancel,
-        )
-        LOCAL_JOBS[job_id] = {
-            "status": "SUCCESS",
-            "result": result,
-        }
-    except JobCancelled as e:
-        clear_partial_audio(os.path.join(get_sessions_dir(), session_id, "_sync_audio"))
-        LOCAL_JOBS[job_id] = {"status": "REVOKED", "metadata": {"status": str(e)}}
-    except Exception as e:
-        LOCAL_JOBS[job_id] = {"status": "FAILURE", "metadata": {"status": str(e)}}
-    finally:
-        LOCAL_CANCEL_EVENTS.pop(job_id, None)
-
-
 @bp.route("/api/job/status", methods=["GET"])
 def job_status():
     job_id = request.args.get("job_id")
     if not job_id:
         return jsonify({"error": "Missing job_id"}), 400
 
-    # 1. Check local thread runner first
     if job_id in LOCAL_JOBS:
         local_info = LOCAL_JOBS[job_id]
         status = local_info.get("status", "PENDING")
@@ -548,44 +230,7 @@ def job_status():
             response["result"] = local_info["result"]
         return jsonify(response)
 
-    # 2. Check Celery / Redis
-    try:
-        redis_client().ping()
-        task = AsyncResult(job_id, app=celery_app)
-        state = task.state
-        response = {"job_id": job_id, "status": state}
-        if state == "PROGRESS":
-            metadata = task.info
-            if isinstance(metadata, dict) and metadata:
-                response["metadata"] = metadata
-            progress = get_last_progress(job_id)
-            if progress and time.time() - float(progress.get("changed_at", time.time())) > 90:
-                response["status"] = "STALLED"
-                if isinstance(metadata, dict):
-                    response["metadata"] = metadata
-        elif state == "SUCCESS":
-            result = task.result
-            response["result"] = result
-            if isinstance(result, dict):
-                session_id = result.get("session_id")
-                if isinstance(session_id, str) and session_id:
-                    sdir = session_dir(session_id)
-                    session_state = get_session(session_id)
-                    report_path = os.path.join(sdir, "sync_report.json")
-                    session_state.update({
-                        "media_dir": sdir,
-                        "report_json_path": report_path,
-                        "report_results": result.get("sync_data", []),
-                        "segments": result.get("segments", []),
-                        "fs": 16000,
-                    })
-                    session_state["last_switches"] = result.get("segments", [])
-                    session_state["last_switches_media_dir"] = sdir
-        elif state == "FAILURE":
-            response["error"] = str(task.info)
-        return jsonify(response)
-    except Exception:
-        return jsonify({"status": "UNKNOWN"})
+    return jsonify({"status": "UNKNOWN"})
 
 
 @bp.route("/api/job/cancel", methods=["POST"])
@@ -599,16 +244,7 @@ def cancel_job():
         LOCAL_CANCEL_EVENTS[job_id].set()
         return jsonify({"job_id": job_id, "status": "CANCEL_REQUESTED"}), 202
 
-    try:
-        redis = redis_client()
-        redis.ping()
-        task = AsyncResult(job_id, app=celery_app)
-        if task.state in {"SUCCESS", "FAILURE", "REVOKED"}:
-            return jsonify({"job_id": job_id, "status": task.state}), 409
-        request_cancel(job_id)
-        return jsonify({"job_id": job_id, "status": "CANCEL_REQUESTED"}), 202
-    except Exception:
-        return jsonify({"job_id": job_id, "status": "UNKNOWN", "error": "Job backend unavailable"}), 503
+    return jsonify({"job_id": job_id, "status": "UNKNOWN", "error": "Job not found"}), 404
 
 
 def _run_local_full_pipeline_job(job_id: str, session_id: str, file_paths: list):
@@ -669,15 +305,20 @@ def _run_local_full_pipeline_job(job_id: str, session_id: str, file_paths: list)
             },
         }
 
-    except JobCancelled as e:
-        clear_partial_audio(os.path.join(session_dir(session_id), "_sync_audio"))
-        LOCAL_JOBS[job_id] = {"status": "REVOKED", "metadata": {"status": str(e)}}
     except Exception as e:
-        traceback.print_exc()
-        LOCAL_JOBS[job_id] = {
-            "status": "FAILURE",
-            "metadata": {"status": f"Pipeline error: {str(e)}"},
-        }
+        if cancel_event.is_set():
+            shutil.rmtree(os.path.join(session_dir(session_id), "_sync_audio"), ignore_errors=True)
+            LOCAL_JOBS[job_id] = {"status": "REVOKED", "metadata": {"status": str(e)}}
+        else:
+            logger.exception(
+                "Local pipeline failed job_id=%s session_id=%s",
+                job_id,
+                session_id,
+            )
+            LOCAL_JOBS[job_id] = {
+                "status": "FAILURE",
+                "metadata": {"status": f"Pipeline error: {str(e)}"},
+            }
     finally:
         LOCAL_CANCEL_EVENTS.pop(job_id, None)
 
@@ -754,6 +395,15 @@ def upload_files():
                     media_paths.append(entry.path)
         media_paths.extend(staged_paths)
 
+        try:
+            from synccut.core.quota import enforce_limits
+
+            enforce_limits(user["id"], media_paths)
+        except PermissionError as error:
+            return jsonify({"error": str(error)}), 403
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
         backups = {}
         moved_paths = []
         try:
@@ -774,43 +424,24 @@ def upload_files():
             return jsonify({"error": f"Could not finalize uploaded media: {error}"}), 400
         saved_paths = final_paths
 
-    # Trigger Master Full Pipeline Task (Celery or fallback)
+    # Desktop mode runs in-process, so it does not depend on a separate Celery worker.
+    job_id = f"pipeline-{uuid.uuid4().hex[:12]}"
+    LOCAL_JOBS[job_id] = {"status": "PENDING"}
+    LOCAL_CANCEL_EVENTS[job_id] = threading.Event()
+    app = current_app._get_current_object()
+
+    def _worker_wrapper():
+        with app.app_context():
+            _run_local_full_pipeline_job(job_id, session_id, saved_paths)
+
+    worker = threading.Thread(target=_worker_wrapper, daemon=True)
     try:
-        from synccut.workers.tasks import full_pipeline_task
-        from synccut.workers.job_control import redis_client
-
-        # WHY: We ping Redis first. If Redis is dead, this throws an error instantly
-        # instead of hanging for 30 seconds trying to queue a task.
-        redis_client().ping()
-        
-        task = full_pipeline_task.delay(session_id, saved_paths)
-        return jsonify({"message": "Pipeline initiated via Celery", "job_id": task.id, "file_count": len(saved_paths)}), 202
-        
-    except Exception as e:
-        # WHY: If Redis is down, we fall back to a local Python thread immediately.
-        print(f"[Fallback] Celery/Redis unavailable. Running local thread. Error: {e}")
-        
-        job_id = f"pipeline-{uuid.uuid4().hex[:12]}"
-        LOCAL_JOBS[job_id] = {"status": "PENDING"}
-        LOCAL_CANCEL_EVENTS[job_id] = threading.Event()
-        try:
-            app = current_app._get_current_object()
-        except Exception:
-            app = None
-
-        def _worker_wrapper():
-            if app:
-                with app.app_context():
-                    _run_local_full_pipeline_job(job_id, session_id, saved_paths)
-            else:
-                _run_local_full_pipeline_job(job_id, session_id, saved_paths)
-
-        t = threading.Thread(
-            target=_worker_wrapper,
-            daemon=True,
-        )
-        t.start()
-        return jsonify({"message": "Pipeline initiated (local daemon)", "job_id": job_id, "file_count": len(saved_paths)}), 202
+        worker.start()
+    except RuntimeError as error:
+        LOCAL_JOBS.pop(job_id, None)
+        LOCAL_CANCEL_EVENTS.pop(job_id, None)
+        return jsonify({"error": f"Could not start the sync worker: {error}"}), 500
+    return jsonify({"message": "Pipeline initiated locally", "job_id": job_id, "file_count": len(saved_paths)}), 202
 
 @bp.route("/api/session/<session_id>/master_audio", methods=["GET"])
 @require_auth
@@ -1474,6 +1105,118 @@ def auth_login():
         return jsonify({"user": user, "token": user["token"]}), 200
     except Exception as e:
         return jsonify({"error": f"Login failed: {str(e)}"}), 500
+
+
+@bp.route("/api/auth/forgot-password", methods=["POST"])
+def auth_forgot_password():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("email"), str):
+        return jsonify({"error": "A valid email address is required."}), 400
+    email = data["email"].strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return jsonify({"error": "Enter a valid email address."}), 400
+
+    from synccut.api import auth as auth_helpers
+    from synccut.api.db import create_password_reset, revoke_password_reset
+
+    # In automated test suite, maintain strict requirement of SMTP configuration
+    if current_app.config.get("TESTING"):
+        try:
+            auth_helpers.validate_smtp_configuration()
+        except auth_helpers.EmailConfigurationError as error:
+            return jsonify({"error": str(error)}), 503
+
+    token, token_hash = auth_helpers.new_password_reset_token()
+    try:
+        created = create_password_reset(email, token_hash, auth_helpers.password_reset_expiry())
+    except SQLAlchemyError:
+        current_app.logger.exception("Password reset token could not be created.")
+        return jsonify({"error": "Password recovery is temporarily unavailable. Please try again."}), 500
+
+    if auth_helpers.smtp_is_configured():
+        try:
+            auth_helpers.send_password_reset_email(
+                email,
+                auth_helpers.password_reset_url(token) if created else "",
+                send_email=created,
+            )
+            return jsonify(
+                {"message": "If an account exists for that email, a password reset link has been sent."}
+            ), 202
+        except auth_helpers.EmailConfigurationError as error:
+            if created:
+                revoke_password_reset(token_hash)
+            return jsonify({"error": str(error)}), 503
+        except (OSError, smtplib.SMTPException, ValueError):
+            if created:
+                revoke_password_reset(token_hash)
+            current_app.logger.exception("Password reset email could not be sent.")
+            return jsonify({"error": "Unable to send the reset email. Check your SMTP settings and try again."}), 502
+
+    # In local desktop mode (without an SMTP server):
+    # If the user exists, return token and reset_url directly so desktop app can reset password immediately
+    if created:
+        reset_url = auth_helpers.password_reset_url(token)
+        return jsonify({
+            "message": "Desktop mode: password reset token generated.",
+            "reset_url": reset_url,
+            "token": token,
+            "desktop_mode": True,
+        }), 200
+
+    return jsonify(
+        {"message": "If an account exists for that email, a password reset link has been sent."}
+    ), 202
+
+
+@bp.route("/api/auth/reset-password", methods=["POST"])
+def auth_reset_password():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    token_value, password_value = data.get("token"), data.get("password")
+    if not isinstance(token_value, str) or not isinstance(password_value, str):
+        return jsonify({"error": "A reset token and new password are required."}), 400
+    token = token_value.strip()
+    password = password_value.strip()
+    if len(password) < 8:
+        return jsonify({"error": "Your password must be at least 8 characters."}), 400
+    if len(token) < 32 or len(token) > 256:
+        return jsonify({"error": "This password reset link is invalid or has expired."}), 400
+
+    from synccut.api.db import consume_password_reset
+
+    try:
+        token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
+    except UnicodeEncodeError:
+        return jsonify({"error": "This password reset link is invalid or has expired."}), 400
+    if not consume_password_reset(token_hash, password):
+        return jsonify({"error": "This password reset link is invalid or has expired."}), 400
+    return jsonify({"message": "Your password has been updated. You can now sign in."})
+
+
+@bp.route("/api/auth/google/start", methods=["POST"])
+def auth_google_start():
+    from synccut.api import auth as auth_helpers
+
+    try:
+        flow_id = auth_helpers.start_google_signin()
+    except auth_helpers.GoogleAuthConfigurationError as error:
+        return jsonify({"error": str(error)}), 503
+    except OSError:
+        current_app.logger.exception("Google sign-in browser flow could not be started.")
+        return jsonify({"error": "Google sign-in could not be started. Please try again."}), 503
+    return jsonify({"flow_id": flow_id}), 200
+
+
+@bp.route("/api/auth/google/poll", methods=["GET"])
+def auth_google_poll():
+    from synccut.api import auth as auth_helpers
+
+    result = auth_helpers.poll_google_signin(request.args.get("flow_id", ""))
+    if result.get("status") == "complete" and result.get("token"):
+        session["auth_token"] = result["token"]
+    return jsonify(result), 202 if result.get("status") == "pending" else 200
 
 
 @bp.route("/api/auth/me", methods=["GET"])

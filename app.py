@@ -18,6 +18,9 @@ import threading
 import time
 import webbrowser
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from synccut.api import create_app
 from synccut.api.factory import find_free_port
 

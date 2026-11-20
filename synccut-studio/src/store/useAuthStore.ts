@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { loginApi, registerApi, getMeApi, logoutApi } from '@/lib/api';
+import {
+  loginApi,
+  registerApi,
+  getMeApi,
+  logoutApi,
+  pollGoogleAuthApi,
+  startGoogleAuthApi,
+} from '@/lib/api';
 
 export interface User {
   id: string;
@@ -16,6 +23,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isInitializing: boolean;
   login: (email: string, name?: string, password?: string, isSignUp?: boolean) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => void;
   initialize: () => void;
 }
@@ -88,6 +96,37 @@ export const useAuthStore = create<AuthState>((set) => ({
       isAuthenticated: true,
       isInitializing: false,
     });
+  },
+
+  loginWithGoogle: async () => {
+    const flowId = await startGoogleAuthApi();
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const result = await pollGoogleAuthApi(flowId);
+      if (result.status === 'error') {
+        throw new Error(result.error || 'Google sign-in could not be completed.');
+      }
+      if (result.status === 'complete' && result.user && result.token) {
+        const userObj: User = {
+          id: result.user.id,
+          name: result.user.name || result.user.email,
+          email: result.user.email,
+          avatarUrl: DEFAULT_AVATAR,
+          tier: result.user.tier || 'free',
+          plan: result.user.plan || 'Free Plan',
+        };
+        localStorage.setItem('synccut_auth_token', result.token);
+        localStorage.setItem('synccut_auth_user', JSON.stringify(userObj));
+        set({
+          token: result.token,
+          user: userObj,
+          isAuthenticated: true,
+          isInitializing: false,
+        });
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+    throw new Error('Google sign-in timed out. Please try again.');
   },
 
   logout: () => {

@@ -17,6 +17,7 @@ dist/
 build/
 .vite/
 npm-debug.log*
+*.exe
 
 # Media & Data (CRITICAL - DO NOT COMMIT VIDEOS OR MODELS)
 data/

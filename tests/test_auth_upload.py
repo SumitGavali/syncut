@@ -1,7 +1,8 @@
 import os
 import json
 from io import BytesIO
-from types import SimpleNamespace
+from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.request import urlopen
 
 import pytest
 
@@ -58,6 +59,127 @@ def test_login_rejects_malformed_credentials(api_client):
     assert api_client.post("/api/auth/login", json={"email": [], "password": "valid-password"}).status_code == 400
     assert api_client.post("/api/auth/login", json=["not", "an", "object"]).status_code == 400
     assert api_client.post("/api/auth/login", json={"email": "new@example.test", "password": "wrong"}).status_code == 401
+
+
+def test_password_reset_sends_single_use_link_and_replaces_password(
+    api_client, monkeypatch
+):
+    token = register_user(api_client)
+    sent_emails = []
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
+    monkeypatch.setenv("SMTP_FROM", "no-reply@example.test")
+    monkeypatch.setattr(
+        "synccut.api.auth.send_password_reset_email",
+        lambda email, link, *, send_email: sent_emails.append((email, link))
+        if send_email else None,
+    )
+
+    response = api_client.post(
+        "/api/auth/forgot-password",
+        json={"email": "EDITOR@example.test"},
+    )
+    unknown_response = api_client.post(
+        "/api/auth/forgot-password",
+        json={"email": "missing@example.test"},
+    )
+    assert response.status_code == 202
+    assert response.get_json() == unknown_response.get_json()
+    assert len(sent_emails) == 1
+    assert sent_emails[0][0] == "EDITOR@example.test"
+
+    query = urlsplit(sent_emails[0][1]).fragment.split("?", 1)[1]
+    reset_token = parse_qs(query)["token"][0]
+    reset_response = api_client.post(
+        "/api/auth/reset-password",
+        json={"token": reset_token, "password": "new-secure-password"},
+    )
+    assert reset_response.status_code == 200
+    assert api_client.post(
+        "/api/auth/reset-password",
+        json={"token": reset_token, "password": "another-password"},
+    ).status_code == 400
+    assert api_client.post(
+        "/api/auth/login",
+        json={"email": "editor@example.test", "password": "secure-password"},
+    ).status_code == 401
+    new_login = api_client.post(
+        "/api/auth/login",
+        json={"email": "editor@example.test", "password": "new-secure-password"},
+    )
+    assert new_login.status_code == 200
+    assert db.get_user_by_token(token) is None
+
+
+def test_password_reset_reports_missing_smtp_configuration(api_client, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("SMTP_FROM", raising=False)
+    response = api_client.post(
+        "/api/auth/forgot-password",
+        json={"email": "editor@example.test"},
+    )
+    assert response.status_code == 503
+    assert "SMTP_HOST" in response.get_json()["error"]
+
+
+def test_google_auth_requires_client_id_and_links_verified_identity(api_client, monkeypatch):
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    response = api_client.post("/api/auth/google/start")
+    assert response.status_code == 503
+    assert "GOOGLE_CLIENT_ID" in response.get_json()["error"]
+
+    local_user = db.create_user("google@example.test", "Local User", "secure-password")
+    linked_user = db.authenticate_google_user(
+        "google-subject-1", "GOOGLE@example.test", "Google User"
+    )
+    assert linked_user is not None
+    assert linked_user["id"] == local_user["id"]
+    assert db.authenticate_google_user(
+        "different-google-subject", "google@example.test", "Other User"
+    ) is None
+    assert db.authenticate_user("google@example.test", "secure-password") is not None
+
+
+def test_google_oauth_uses_system_browser_callback(api_client, monkeypatch):
+    from synccut.api import auth as auth_helpers
+
+    opened_urls = []
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "desktop-client-id")
+    monkeypatch.setattr(
+        auth_helpers.webbrowser,
+        "open",
+        lambda url, new: opened_urls.append(url) or True,
+    )
+    monkeypatch.setattr(
+        auth_helpers,
+        "_verify_google_response",
+        lambda code, verifier, redirect_uri, client_id: {
+            "status": "complete",
+            "user": {"id": "google-user", "email": "google@example.test"},
+            "token": "google-auth-token",
+        },
+    )
+
+    start = api_client.post("/api/auth/google/start")
+    assert start.status_code == 200
+    assert start.get_json()["flow_id"]
+    oauth_url = urlsplit(opened_urls[0])
+    oauth_query = parse_qs(oauth_url.query)
+    callback_url = oauth_query["redirect_uri"][0]
+    callback_query = urlencode({"code": "test-code", "state": oauth_query["state"][0]})
+    with urlopen(f"{callback_url}?{callback_query}", timeout=5) as callback:
+        assert callback.status == 200
+
+    for _ in range(20):
+        result = api_client.get(
+            "/api/auth/google/poll",
+            query_string={"flow_id": start.get_json()["flow_id"]},
+        )
+        if result.get_json()["status"] != "pending":
+            break
+        time.sleep(0.05)
+    assert result.status_code == 200
+    assert result.get_json()["status"] == "complete"
+    assert result.get_json()["token"] == "google-auth-token"
 
 
 def test_legacy_dashboard_redirects_to_login_until_authenticated(api_client):
@@ -118,22 +240,24 @@ def test_authenticated_upload_saves_supported_files_and_starts_pipeline(
 ):
     token = register_user(api_client)
     headers = {"Authorization": f"Bearer {token}"}
+    from synccut.api import routes
     from synccut.core import quota
+    started_jobs = []
     monkeypatch.setattr(quota, "check_video_duration", lambda _path: 60.0)
 
-    from synccut.workers.tasks import full_pipeline_task
+    def run_job(job_id, session_id, file_paths):
+        started_jobs.append((job_id, session_id, file_paths))
 
-    monkeypatch.setattr(
-        full_pipeline_task,
-        "delay",
-        lambda *_args, **_kwargs: SimpleNamespace(id="test-job"),
-    )
-    from synccut.workers import job_control
-    monkeypatch.setattr(
-        job_control,
-        "redis_client",
-        lambda: SimpleNamespace(ping=lambda: None),
-    )
+    class ImmediateThread:
+        def __init__(self, target, daemon):
+            self.target = target
+            assert daemon is True
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(routes, "_run_local_full_pipeline_job", run_job)
+    monkeypatch.setattr(routes.threading, "Thread", ImmediateThread)
 
     response = api_client.post(
         "/api/upload",
@@ -148,8 +272,19 @@ def test_authenticated_upload_saves_supported_files_and_starts_pipeline(
     )
 
     assert response.status_code == 202
-    assert response.get_json()["job_id"] == "test-job"
+    job_id = response.get_json()["job_id"]
+    assert job_id.startswith("pipeline-")
     assert response.get_json()["file_count"] == 2
+    assert started_jobs == [
+        (
+            job_id,
+            "test-session",
+            [
+                str(tmp_path / "uploads" / "test-session" / "01_same-name.mp4"),
+                str(tmp_path / "uploads" / "test-session" / "02_same-name.mp4"),
+            ],
+        )
+    ]
     session_dir = tmp_path / "uploads" / "test-session"
     assert (session_dir / "01_same-name.mp4").read_bytes() == b"reference video"
     assert (session_dir / "02_same-name.mp4").read_bytes() == b"camera video"

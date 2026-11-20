@@ -12,6 +12,7 @@ from typing import Generator
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    delete,
     Float,
     ForeignKey,
     Integer,
@@ -51,10 +52,21 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
     salt: Mapped[str | None] = mapped_column(String(64), nullable=True)
     token: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    google_sub: Mapped[str | None] = mapped_column(String(255), nullable=True)
     plan: Mapped[str] = mapped_column(String(40), nullable=False, default="Free Plan")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class Subscription(Base):
@@ -115,7 +127,23 @@ def _engine_and_sessions() -> tuple[Engine, sessionmaker[Session]]:
     engine = _ENGINES.get(key)
     if engine is None:
         connect_args = {"check_same_thread": False} if str(database_url).startswith("sqlite") else {}
-        engine = create_engine(database_url, pool_pre_ping=True, connect_args=connect_args)
+        try:
+            engine = create_engine(database_url, pool_pre_ping=True, connect_args=connect_args)
+            if not str(database_url).startswith("sqlite"):
+                with engine.connect():
+                    pass
+        except Exception as e:
+            if not str(database_url).startswith("sqlite"):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Could not connect to external DATABASE_URL (%s): %s. Falling back to local SQLite.",
+                    database_url, e
+                )
+                sqlite_url = URL.create("sqlite", database=str(_get_db_path()))
+                key = str(sqlite_url)
+                engine = create_engine(sqlite_url, pool_pre_ping=True, connect_args={"check_same_thread": False})
+            else:
+                raise
         _ENGINES[key] = engine
         _SESSION_FACTORIES[key] = sessionmaker(bind=engine, expire_on_commit=False)
     return engine, _SESSION_FACTORIES[key]
@@ -145,6 +173,7 @@ def _ensure_legacy_columns(engine: Engine) -> None:
             "password_hash": "VARCHAR(256)",
             "salt": "VARCHAR(64)",
             "token": "VARCHAR(256)",
+            "google_sub": "VARCHAR(255)",
             "plan": "VARCHAR(40) NOT NULL DEFAULT 'Free Plan'",
         },
         "projects": {
@@ -161,6 +190,10 @@ def _ensure_legacy_columns(engine: Engine) -> None:
                     connection.execute(
                         text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
                     )
+        if "users" in inspector.get_table_names():
+            connection.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_google_sub ON users (google_sub)")
+            )
         if "projects" in inspector.get_table_names():
             connection.execute(
                 text("UPDATE projects SET session_id = id WHERE session_id IS NULL OR session_id = ''")
@@ -241,6 +274,96 @@ def create_user(email: str, name: str, password: str) -> dict:
         result = _user_payload(user, None)
         result["token"] = user.token
         return result
+
+
+def authenticate_google_user(google_sub: str, email: str, name: str) -> dict | None:
+    email_clean = email.strip().lower()
+    name_clean = name.strip() if name and name.strip() else email_clean.split("@")[0]
+    with _session_scope() as session:
+        user = session.scalar(
+            select(User).where(
+                or_(User.google_sub == google_sub, func.lower(User.email) == email_clean)
+            )
+        )
+        if user is not None and user.google_sub not in (None, google_sub):
+            return None
+        if user is None:
+            generated_password = secrets.token_urlsafe(32)
+            salt, legacy_hash = hash_password(generated_password)
+            user = User(
+                id=f"usr_{secrets.token_hex(8)}",
+                email=email_clean,
+                name=name_clean,
+                hashed_password=generate_password_hash(generated_password),
+                password_hash=legacy_hash,
+                salt=salt,
+                google_sub=google_sub,
+                token=secrets.token_urlsafe(32),
+                plan="Free Plan",
+            )
+            session.add(user)
+            session.flush()
+            session.add(Subscription(user_id=user.id, tier="free"))
+            subscription = None
+        else:
+            user.google_sub = google_sub
+            user.token = secrets.token_urlsafe(32)
+            subscription = session.get(Subscription, user.id)
+        result = _user_payload(user, subscription)
+        result["token"] = user.token
+        return result
+
+
+def create_password_reset(email: str, token_hash: str, expires_at: datetime) -> bool:
+    with _session_scope() as session:
+        user = session.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
+        if user is None:
+            return False
+        session.execute(
+            delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+        )
+        session.add(
+            PasswordResetToken(token_hash=token_hash, user_id=user.id, expires_at=expires_at)
+        )
+        return True
+
+
+def revoke_password_reset(token_hash: str) -> None:
+    with _session_scope() as session:
+        session.execute(
+            delete(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+        )
+
+
+def consume_password_reset(token_hash: str, password: str) -> bool:
+    with _session_scope() as session:
+        reset = session.scalar(
+            select(PasswordResetToken)
+            .where(PasswordResetToken.token_hash == token_hash)
+            .with_for_update()
+        )
+        if reset is None:
+            return False
+        expires_at = reset.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            session.delete(reset)
+            return False
+
+        user = session.get(User, reset.user_id)
+        if user is None:
+            session.delete(reset)
+            return False
+        salt, legacy_hash = hash_password(password)
+        user.hashed_password = generate_password_hash(password)
+        user.salt = salt
+        user.password_hash = legacy_hash
+        user.token = None
+        session.execute(
+            delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+        )
+        return True
 
 
 def authenticate_user(email_or_username: str, password: str) -> dict | None:

@@ -39,6 +39,25 @@ Then open **http://localhost:5000**
 - `/` → the landing page (product site)
 - `/app` → the working dashboard (upload files, run sync, get switches, export FCPXML)
 
+## Windows desktop build and account setup
+
+Build the Studio frontend before packaging the desktop app:
+
+```powershell
+Push-Location synccut-studio
+npm run build
+Pop-Location
+pyinstaller --noconfirm --clean build.spec
+```
+
+The desktop app reads account-provider settings from the environment of the process that launches it; the build does not embed credentials:
+
+- Set `GOOGLE_CLIENT_ID` to a Google OAuth client ID created for a **Desktop app**. Google sign-in opens the system browser and returns to SyncCut.
+- For password recovery, set `SMTP_HOST`, `SMTP_PORT` (usually `587`), and `SMTP_FROM`. If the server requires authentication, also set `SMTP_USERNAME` and `SMTP_PASSWORD`. Use `SMTP_USE_SSL=true` with SSL-enabled SMTP (usually port `465`); otherwise SyncCut uses STARTTLS.
+- `SYNCCUT_RESET_URL` is optional; the default reset link opens the local desktop app at `http://127.0.0.1:5000`. Keep the app running while you open and submit the reset link.
+
+Do not commit SMTP credentials. Google sign-in and password recovery report a clear configuration error until their provider settings are present.
+
 ## Routes (unchanged behavior)
 - `POST /api/session` — new session
 - `POST /api/sync` — reference + inputs → sync report

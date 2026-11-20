@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'sonner';
 
 import Landing from '@/pages/Landing';
 import Login from '@/pages/Login';
+import ResetPassword from '@/pages/ResetPassword';
 import Dashboard from '@/pages/Dashboard';
 import Workspace from '@/pages/Workspace';
 import Pricing from '@/pages/Pricing';
@@ -49,6 +50,15 @@ const AnimatedRoutes: React.FC = () => {
           element={
             <PageTransition>
               <Login />
+            </PageTransition>
+          }
+        />
+
+        <Route
+          path="/reset-password"
+          element={
+            <PageTransition>
+              <ResetPassword />
             </PageTransition>
           }
         />
@@ -111,7 +121,7 @@ export default function App() {
   }, [initialize]);
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       {/* Toast Notification Provider (Sonner) styled for dark cyan aesthetic */}
       <Toaster
         theme="dark"
@@ -126,6 +136,6 @@ export default function App() {
         }}
       />
       <AnimatedRoutes />
-    </BrowserRouter>
+    </HashRouter>
   );
 }

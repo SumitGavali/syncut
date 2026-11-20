@@ -99,9 +99,8 @@ def generate_proxies_task(self, session_id: str, file_paths: list):
 # -------------------------------------------------------------------------
 # TASK 2: SYNC MATH (GCC-PHAT + Spanning Tree)
 # -------------------------------------------------------------------------
-@celery_app.task(bind=True)
+
 def run_sync_task(
-    self,
     session_id: str,
     payload: dict,
     ref_path: str,
@@ -111,20 +110,7 @@ def run_sync_task(
     cancel_check=None,
 ):
     """Align long recordings with bounded FFT windows and prepare the report."""
-    externally_controlled = progress_callback is not None or cancel_check is not None
     try:
-        job_id = getattr(getattr(self, "request", None), "id", None)
-        if progress_callback is None and job_id:
-            def progress_callback(current, total, status):
-                check_cancelled(job_id)
-                record_progress(job_id, current, total, status)
-                metadata = {"status": status}
-                if current is not None and total is not None:
-                    metadata.update({"current": current, "total": total})
-                self.update_state(state="PROGRESS", meta=metadata)
-        if cancel_check is None and job_id:
-            cancel_check = lambda: check_cancelled(job_id)
-
         sdir = os.path.join(get_sessions_dir(), session_id)
         os.makedirs(sdir, exist_ok=True)
         paths = extracted_wavs or [ref_path] + input_paths
@@ -261,14 +247,8 @@ def run_sync_task(
             "master_audio_url": master_audio_url,
         }
 
-    except JobCancelled as e:
-        if externally_controlled:
-            raise
-        job_id = getattr(getattr(self, "request", None), "id", None)
-        if job_id:
-            clear_partial_audio(os.path.join(get_sessions_dir(), session_id, "_sync_audio"))
-        self.update_state(state="REVOKED", meta={"status": str(e)})
-        raise Ignore()
+    except JobCancelled:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise RuntimeError(f"Sync failed: {str(e)}")
@@ -277,9 +257,8 @@ def run_sync_task(
 # -------------------------------------------------------------------------
 # TASK 3: ACTIVE SPEAKER AI CUT
 # -------------------------------------------------------------------------
-@celery_app.task(bind=True)
+
 def run_ai_cut_task(
-    self,
     session_id: str,
     file_paths: list = None,
     progress_callback=None,
@@ -291,18 +270,6 @@ def run_ai_cut_task(
     Camera labels come straight from the report so the exported timeline and the
     UI overrides stay in lock-step.
     """
-    externally_controlled = progress_callback is not None or cancel_check is not None
-    job_id = getattr(getattr(self, "request", None), "id", None)
-    if progress_callback is None and job_id:
-        def progress_callback(current, total, status):
-            check_cancelled(job_id)
-            record_progress(job_id, current, total, status)
-            metadata = {"status": status}
-            if current is not None and total is not None:
-                metadata.update({"current": current, "total": total})
-            self.update_state(state="PROGRESS", meta=metadata)
-    if cancel_check is None and job_id:
-        cancel_check = lambda: check_cancelled(job_id)
     if progress_callback:
         progress_callback(None, None, "Preparing rough-cut analysis")
 
@@ -382,13 +349,8 @@ def run_ai_cut_task(
                 cancel_check=cancel_check,
                 progress_callback=report_frame,
             ) or []
-    except JobCancelled as e:
-        if externally_controlled:
-            raise
-        if job_id:
-            clear_partial_audio(os.path.join(get_sessions_dir(), session_id, "_sync_audio"))
-        self.update_state(state="REVOKED", meta={"status": str(e)})
-        raise Ignore()
+    except JobCancelled:
+        raise
     except Exception:
         logger.warning("Active-speaker rough cut failed; using a single-camera fallback", exc_info=True)
 

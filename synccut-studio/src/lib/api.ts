@@ -1,9 +1,18 @@
 import axios from 'axios';
 import type { Segment, SyncCutProject } from '@/store/useStore';
 import type { Project, ProjectStatus } from '@/store/useProjectStore';
-import type { EditorClip } from '@/store/useEditorStore'; // <-- IMPORT ADDED
+import type { EditorClip } from '@/store/useEditorStore';
 
-const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE ?? '', withCredentials: true, });
+// Packaged desktop builds are served by Flask on a dynamically selected port.
+// Use the same origin so API calls never hit a stale service on port 5000.
+const API_BASE =
+  import.meta.env.VITE_API_BASE ??
+  (import.meta.env.DEV ? '' : window.location.origin);
+
+const http = axios.create({
+  baseURL: API_BASE,
+  withCredentials: true,
+});
 
 // Attach Authorization Bearer token automatically if logged in
 http.interceptors.request.use((config) => {
@@ -100,10 +109,9 @@ export async function getCameraThumbnail(sessionId: string, index: number, time:
 }
 
 export function getSessionMediaUrl(sessionId: string, index: number) {
-  const base = import.meta.env.VITE_API_BASE ?? '';
   const token = localStorage.getItem('synccut_auth_token');
   const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `${base}/api/session/${encodeURIComponent(sessionId)}/media/${index}${tokenParam}`;
+  return `${API_BASE}/api/session/${encodeURIComponent(sessionId)}/media/${index}${tokenParam}`;
 }
 
 export async function loadSessionProject(sessionId: string) {
@@ -129,7 +137,7 @@ export async function exportTimeline(
   format: string,
   project: SyncCutProject,
   overrides: Record<number, string>,
-  timelineClips: EditorClip[], // <-- NEW ARGUMENT ADDED
+  timelineClips: EditorClip[],
 ) {
   const res = await http.post(
     '/api/export/timeline',
@@ -138,7 +146,7 @@ export async function exportTimeline(
       format,
       project,
       overrides,
-      timeline_clips: timelineClips // <-- NEW PAYLOAD ADDED
+      timeline_clips: timelineClips
     },
     { responseType: 'blob' },
   );
@@ -158,6 +166,42 @@ export async function loginApi(email: string, password?: string) {
 
 export async function registerApi(email: string, password: string, name?: string) {
   const { data } = await http.post<{ user: any; token: string }>('/api/auth/register', { email, password, name });
+  return data;
+}
+
+export interface PasswordResetResponse {
+  message: string;
+  token?: string;
+  reset_url?: string;
+  desktop_mode?: boolean;
+}
+
+export async function requestPasswordResetApi(email: string) {
+  const { data } = await http.post<PasswordResetResponse>('/api/auth/forgot-password', { email });
+  return data;
+}
+
+export async function resetPasswordApi(token: string, password: string) {
+  const { data } = await http.post<{ message: string }>('/api/auth/reset-password', { token, password });
+  return data;
+}
+
+export async function startGoogleAuthApi() {
+  const { data } = await http.post<{ flow_id: string }>('/api/auth/google/start');
+  return data.flow_id;
+}
+
+export interface GoogleAuthPollResponse {
+  status: 'pending' | 'complete' | 'error';
+  user?: any;
+  token?: string;
+  error?: string;
+}
+
+export async function pollGoogleAuthApi(flowId: string) {
+  const { data } = await http.get<GoogleAuthPollResponse>('/api/auth/google/poll', {
+    params: { flow_id: flowId },
+  });
   return data;
 }
 

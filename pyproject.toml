@@ -30,6 +30,8 @@ dependencies = [
     "SQLAlchemy>=2.0,<3.0",
     "psycopg2-binary>=2.9,<3.0",
     "stripe>=10.0,<17.0",
+    "google-auth>=2.0,<3.0",
+    "pywebview>=5.0",
 ]
 
 [project.scripts]

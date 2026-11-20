@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+         IgnorableNamespaces="uap uap10 rescap mp">
+
+  <Identity Name="SumitGavali.SyncCutStudio"
+            Publisher="CN=1AB983B9-EE1D-4CEB-ABB2-F1EDD981B79F"
+            Version="1.2.2.0"
+            ProcessorArchitecture="x64" />
+
+  <mp:PhoneIdentity PhoneProductId="5e51efe7-f6d8-4393-a923-73696aca37b6"
+                    PhonePublisherId="854a84a1-e829-4898-872e-2af423d8141f" />
+
+  <Properties>
+    <DisplayName>SyncCut Studio</DisplayName>
+    <PublisherDisplayName>Sumit Gavali</PublisherDisplayName>
+    <Description>AI-powered multicamera audio sync and automated rough-cut suite for video editors.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <uap10:PackageIntegrity>
+      <uap10:Content Enforcement="on" />
+    </uap10:PackageIntegrity>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.17763.0"
+                        MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="App"
+                 Executable="SyncCutStudio.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="SyncCut Studio"
+                          Description="AI-powered multicamera audio sync and automated rough-cut suite"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\icon-150x150.png"
+                          Square44x44Logo="Assets\icon-44x44.png" />
+    </Application>
+  </Applications>
+
+</Package>
